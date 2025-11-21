@@ -4,10 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-export default function ProfilePage(): JSX.Element {
+export default function ProfilePage(): any {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; name: string; email: string ,createdAt: string} | null>(null);
   
   const [name, setName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -20,39 +20,39 @@ export default function ProfilePage(): JSX.Element {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  // useEffect(() => {
+  //   fetchProfile();
+  // }, []);
 
-  const fetchProfile = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        router.push("/login");
-        return;
-      }
+  // const fetchProfile = async () => {
+  //   try {
+  //     const token = localStorage.getItem("token");
+  //     if (!token) {
+  //       router.push("/login");
+  //       return;
+  //     }
 
-      const res = await fetch("/api/auth/profile", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+  //     const res = await fetch("/api/auth/profile", {
+  //       headers: {
+  //         Authorization: `Bearer ${token}`,
+  //       },
+  //     });
 
-      const data = await res.json();
+  //     const data = await res.json();
       
-      if (data.success) {
-        setUser(data.data.user);
-        setName(data.data.user.name);
-      } else {
-        throw new Error(data.message || "Failed to load profile");
-      }
-    } catch (err: any) {
-      setError(err?.message || "Failed to load profile");
-      if (err?.message?.includes("token")) {
-        setTimeout(() => router.push("/login"), 2000);
-      }
-    }
-  };
+  //     if (data.success) {
+  //       setUser(data.data.user);
+  //       setName(data.data.user.name);
+  //     } else {
+  //       throw new Error(data.message || "Failed to load profile");
+  //     }
+  //   } catch (err: any) {
+  //     setError(err?.message || "Failed to load profile");
+  //     if (err?.message?.includes("token")) {
+  //       setTimeout(() => router.push("/login"), 2000);
+  //     }
+  //   }
+  // };
 
   const validateName = (value: string): string | null => {
     if (!value.trim()) return "Name is required";
