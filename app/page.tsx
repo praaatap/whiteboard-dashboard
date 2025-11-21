@@ -54,7 +54,7 @@ export default function Home(): any {
             </Link>
             <div className="ml-3"></div>
             <Link
-              href="#"
+              href="/signup"
               className="inline-block bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-md text-sm font-medium"
             >
               Get Started
