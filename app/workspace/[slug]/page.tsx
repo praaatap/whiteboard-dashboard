@@ -23,6 +23,7 @@ interface DrawElement {
   strokeWidth: number;
   text?: string;
 }
+export const runtime = 'edge';
 
 export default function WhiteboardPage({ params }: Props) {
   const [slug, setSlug] = useState<string>("");
