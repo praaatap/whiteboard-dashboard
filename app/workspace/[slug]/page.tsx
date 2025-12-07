@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react"; // <--- ADDED
 import Link from "next/link";
 import {
   FiMic, FiMicOff, FiVideo, FiVideoOff, FiUsers, FiUserPlus,
@@ -11,10 +12,8 @@ import {
   FiRotateCcw, FiRotateCw, FiDownload, FiLayers, FiHelpCircle,
   FiMousePointer, FiMove, FiSquare, FiCircle, FiArrowRight,
   FiMinus, FiEdit3, FiType, FiFileText, FiMessageSquare,
-  FiThumbsUp, FiHeart, FiZap, FiEye, FiPlus
+  FiThumbsUp, FiHeart, FiZap, FiEye, FiPlus, FiImage
 } from "react-icons/fi";
-import { MdLocalHospital } from "react-icons/md";
-import { GiThroneKing } from "react-icons/gi";
 
 // --- Types ---
 type Props = {
@@ -36,6 +35,7 @@ interface DrawElement {
   fillColor: string;
   strokeWidth: number;
   text?: string;
+  src?: string;
   opacity?: number;
   locked?: boolean;
   comments?: Comment[];
@@ -246,6 +246,13 @@ export default function WhiteboardPage({ params }: Props) {
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const lastCursorUpdate = useRef<number>(0);
 
+  // --- AUTH HOOK ---
+  const { data: session, status } = useSession();
+
+  // --- ADDED REFS ---
+  const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const userColor = useMemo(() => {
     const colors = ["#FF5733", "#33FF57", "#3357FF", "#F033FF", "#FF33A8", "#33FFF5"];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -339,7 +346,18 @@ export default function WhiteboardPage({ params }: Props) {
     params.then(p => setSlug(p.slug));
   }, [params]);
 
-  // --- NEW: Capture token from URL and store in localStorage (for shared links) ---
+  // --- HELPER: GET TOKEN (UNIFIED) ---
+  const getToken = useCallback(() => {
+    if (session && (session as any).accessToken) {
+      return (session as any).accessToken;
+    }
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("auth_token");
+    }
+    return null;
+  }, [session]);
+
+  // Capture token from URL if present
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -349,48 +367,44 @@ export default function WhiteboardPage({ params }: Props) {
         localStorage.setItem("auth_token", urlToken);
       }
     } catch {
-      // ignore URL parse errors
+      // ignore
     }
   }, []);
 
-  // Share URL (now includes token when available)
+  // Share URL generation
   useEffect(() => {
     if (typeof window !== "undefined" && slug) {
       const base = `${window.location.origin}/workspace/${slug}`;
-      const token = typeof window !== "undefined"
-        ? localStorage.getItem("auth_token")
-        : null;
+      const token = getToken();
       if (token) {
         setShareUrl(`${base}?token=${encodeURIComponent(token)}`);
       } else {
         setShareUrl(base);
       }
     }
-  }, [slug]);
+  }, [slug, getToken]);
 
   // Theme Effect
   useEffect(() => {
     document.documentElement.classList.toggle("light", theme === "light");
   }, [theme]);
 
-  // WebSocket (updated to require non-empty token and URL-encode it)
+  // --- WEBSOCKET CONNECTION (FIXED) ---
   useEffect(() => {
     if (!slug) return;
+    if (status === "loading") return; // Wait for NextAuth
 
-    const token = (typeof window !== "undefined")
-      ? localStorage.getItem("auth_token")
-      : null;
+    const token = getToken();
 
     if (!token) {
-      console.error("❌ No auth token found, skipping WebSocket connection");
+      console.warn("⚠️ No auth token available yet. WebSocket waiting for auth...");
       return;
     }
 
-    const wsUrl = `ws://localhost:5000/ws/whiteboard/${slug}?token=${encodeURIComponent(
-      token
-    )}`;
-    const ws = new WebSocket(wsUrl);
+    const wsUrl = `ws://localhost:5000/ws/whiteboard/${slug}?token=${encodeURIComponent(token)}`;
+    console.log("🔌 Connecting to:", wsUrl);
 
+    const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
     ws.onopen = () => {
@@ -423,7 +437,43 @@ export default function WhiteboardPage({ params }: Props) {
       }
       ws.close();
     };
-  }, [slug]);
+  }, [slug, status, getToken]);
+
+  // --- ADDED: Image Upload Handler ---
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const src = event.target?.result as string;
+
+      const newEl: DrawElement = {
+        id: Date.now().toString(),
+        type: "image",
+        // Place in center of current viewport view
+        startPoint: { x: 100 - panOffset.x, y: 100 - panOffset.y },
+        endPoint: { x: 400 - panOffset.x, y: 300 - panOffset.y },
+        src: src,
+        color: "transparent",
+        fillColor: "transparent",
+        strokeWidth: 0,
+        createdBy: clientId,
+        createdAt: Date.now()
+      };
+
+      setElements(prev => [...prev, newEl]);
+
+      socketRef.current?.send(JSON.stringify({
+        type: "draw_action",
+        element: newEl
+      }));
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const addToHistory = (newElements: DrawElement[]) => {
     const newHistory = history.slice(0, historyStep + 1);
@@ -598,7 +648,7 @@ export default function WhiteboardPage({ params }: Props) {
     }
 
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = getToken(); // Use unified token
       const response = await fetch(`http://localhost:5000/api/dashboards/${slug}/invite`, {
         method: "POST",
         headers: {
@@ -638,7 +688,7 @@ export default function WhiteboardPage({ params }: Props) {
           setElements(msg.history);
         } else {
           // Check if template needed
-          const token = localStorage.getItem("auth_token");
+          const token = getToken();
           if (token && slug) {
             try {
               const res = await fetch(`http://localhost:5000/api/dashboards/${slug}`, {
@@ -878,6 +928,45 @@ export default function WhiteboardPage({ params }: Props) {
           }
         }
         break;
+
+      // --- ADDED: Image Rendering Case ---
+      case "image":
+        if (element.src && element.endPoint) {
+          const img = imageCache.current.get(element.src);
+          const x = Math.min(element.startPoint.x, element.endPoint.x);
+          const y = Math.min(element.startPoint.y, element.endPoint.y);
+          const w = Math.abs(element.endPoint.x - element.startPoint.x);
+          const h = Math.abs(element.endPoint.y - element.startPoint.y);
+
+          if (img && img.complete) {
+            ctx.save();
+            ctx.globalAlpha = (element.opacity || 100) / 100;
+            ctx.drawImage(img, x, y, w, h);
+            ctx.restore();
+          } else if (!img) {
+            const newImg = new Image();
+            newImg.src = element.src;
+            newImg.onload = () => { redrawCanvas(); };
+            imageCache.current.set(element.src, newImg);
+
+            // Placeholder while loading
+            ctx.fillStyle = "#333";
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = "#fff";
+            ctx.font = "12px Arial";
+            ctx.fillText("Loading...", x + 5, y + 20);
+          } else {
+            ctx.fillStyle = "#333";
+            ctx.fillRect(x, y, w, h);
+          }
+
+          if (selectedElementId === element.id) {
+            ctx.strokeStyle = "#4299e1";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+          }
+        }
+        break;
     }
 
     // Draw comment indicator
@@ -885,14 +974,13 @@ export default function WhiteboardPage({ params }: Props) {
       ctx.save();
       ctx.fillStyle = "#FF5733";
       ctx.font = "bold 10px Arial";
-      const badge = element.comments.length.toString();
       const bx = element.startPoint.x + (element.endPoint ? Math.abs(element.endPoint.x - element.startPoint.x) : 20) - 15;
       const by = element.startPoint.y - 8;
       ctx.beginPath();
       ctx.arc(bx, by, 8, 0, 2 * Math.PI);
       ctx.fill();
       ctx.fillStyle = "#fff";
-      ctx.fillText(badge, bx - 3, by + 3);
+      ctx.fillText(element.comments.length.toString(), bx - 3, by + 3);
       ctx.restore();
     }
 
@@ -1394,11 +1482,24 @@ export default function WhiteboardPage({ params }: Props) {
       ? { bg: "#0c0c0f", card: "#141418", text: "text-gray-200", border: "border-white/10" }
       : { bg: "#f5f5f5", card: "#ffffff", text: "text-gray-800", border: "border-gray-300" };
 
+  if (status === "loading") {
+    return <div className="h-screen bg-[#0c0c0f] flex items-center justify-center text-white">Loading...</div>;
+  }
+
   return (
     <div
       className={`h-screen ${theme === "dark" ? "bg-[#0c0c0f]" : "bg-gray-100"} ${themeColors.text} flex flex-col overflow-hidden relative`}
       style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
     >
+      {/* --- ADDED: Hidden File Input --- */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleImageUpload}
+      />
+
       {/* Video Call Overlay */}
       {showVideoCall && (
         <div
@@ -1476,13 +1577,12 @@ export default function WhiteboardPage({ params }: Props) {
               </span>
               <div className="flex items-center gap-1">
                 <div
-                  className={`w-2 h-2 rounded-full ${
-                    currentUser.status === "online"
+                  className={`w-2 h-2 rounded-full ${currentUser.status === "online"
                       ? "bg-emerald-500"
                       : currentUser.status === "busy"
-                      ? "bg-red-500"
-                      : "bg-yellow-500"
-                  }`}
+                        ? "bg-red-500"
+                        : "bg-yellow-500"
+                    }`}
                 />
                 <span className="text-xs text-gray-400 capitalize">
                   {currentUser.role}
@@ -1545,9 +1645,8 @@ export default function WhiteboardPage({ params }: Props) {
 
           <button
             onClick={toggleMic}
-            className={`p-2 rounded-lg transition ${
-              isMicOn ? "bg-green-500/20 text-green-400" : "hover:bg-white/10 text-gray-400"
-            }`}
+            className={`p-2 rounded-lg transition ${isMicOn ? "bg-green-500/20 text-green-400" : "hover:bg-white/10 text-gray-400"
+              }`}
             title="Voice"
           >
             {isMicOn ? <FiMic size={18} /> : <FiMicOff size={18} />}
@@ -1555,9 +1654,8 @@ export default function WhiteboardPage({ params }: Props) {
 
           <button
             onClick={toggleVideo}
-            className={`p-2 rounded-lg transition ${
-              isVideoOn ? "bg-red-500/20 text-red-500" : "hover:bg-white/10 text-gray-400"
-            }`}
+            className={`p-2 rounded-lg transition ${isVideoOn ? "bg-red-500/20 text-red-500" : "hover:bg-white/10 text-gray-400"
+              }`}
             title="Video"
           >
             {isVideoOn ? <FiVideo size={18} /> : <FiVideoOff size={18} />}
@@ -1744,11 +1842,10 @@ export default function WhiteboardPage({ params }: Props) {
             {notifications.map((notif) => (
               <div
                 key={notif.id}
-                className={`p-3 rounded-lg ${
-                  !notif.read
+                className={`p-3 rounded-lg ${!notif.read
                     ? "bg-indigo-500/10 border border-indigo-500/30"
                     : "bg-white/5"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm">
@@ -1851,17 +1948,16 @@ export default function WhiteboardPage({ params }: Props) {
                   onChange={(e) => setInviteEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleInviteUser()}
                   placeholder="user@example.com"
-                  className={`w-full rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-4 py-3 focus:outline-nonefocus:ring-2 focus:ring-indigo-500`}
+                  className={`w-full rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500`}
                 />
               </div>
 
               {inviteStatus && (
                 <div
-                  className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
-                    inviteStatus.includes("✓")
+                  className={`p-3 rounded-lg text-sm flex items-center gap-2 ${inviteStatus.includes("✓")
                       ? "bg-green-500/10 text-green-400 border border-green-500/30"
                       : "bg-red-500/10 text-red-400 border border-red-500/30"
-                  }`}
+                    }`}
                 >
                   {inviteStatus.includes("✓") ? <FiCheckCircle /> : <FiAlertCircle />}
                   {inviteStatus}
@@ -2073,8 +2169,8 @@ export default function WhiteboardPage({ params }: Props) {
                           cursor.status === "online"
                             ? "#10b981"
                             : cursor.status === "busy"
-                            ? "#ef4444"
-                            : "#f59e0b"
+                              ? "#ef4444"
+                              : "#f59e0b"
                       }}
                     />
                     <span className="text-xs text-gray-400 capitalize">
@@ -2117,11 +2213,10 @@ export default function WhiteboardPage({ params }: Props) {
                 return (
                   <div
                     key={el.id}
-                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
-                      selectedElementId === el.id
+                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${selectedElementId === el.id
                         ? "bg-indigo-500/20 border border-indigo-500"
                         : "hover:bg-white/5"
-                    }`}
+                      }`}
                     onClick={() => setSelectedElementId(el.id)}
                   >
                     <div className="flex items-center gap-2">
@@ -2175,17 +2270,27 @@ export default function WhiteboardPage({ params }: Props) {
               <button
                 key={tool.id}
                 onClick={() => setSelectedTool(tool.id)}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                  selectedTool === tool.id
+                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${selectedTool === tool.id
                     ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
                     : "text-gray-400 hover:bg-white/5 hover:text-white"
-                }`}
+                  }`}
                 title={`${tool.label} (${tool.shortcut})`}
               >
                 <Icon size={18} />
               </button>
             );
           })}
+
+          <div className="h-px w-8 bg-white/10 my-2" />
+
+          {/* --- ADDED: Image Upload Button --- */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-10 h-10 rounded-lg hover:bg-white/5 flex items-center justify-center text-gray-400 hover:text-white transition"
+            title="Upload Image"
+          >
+            <FiImage size={18} />
+          </button>
 
           <div className="h-px w-8 bg-white/10 my-2" />
 
@@ -2229,11 +2334,10 @@ export default function WhiteboardPage({ params }: Props) {
 
             <button
               onClick={() => setFillColor("transparent")}
-              className={`w-6 h-6 rounded border transition ${
-                fillColor === "transparent"
+              className={`w-6 h-6 rounded border transition ${fillColor === "transparent"
                   ? "border-red-500 bg-red-500/20"
                   : "border-gray-500 hover:border-red-500"
-              }`}
+                }`}
               title="No Fill"
             >
               <FiX size={12} className="mx-auto" />
@@ -2245,9 +2349,8 @@ export default function WhiteboardPage({ params }: Props) {
               <button
                 key={w}
                 onClick={() => setStrokeWidth(w)}
-                className={`w-8 h-8 rounded flex items-center justify-center transition ${
-                  strokeWidth === w ? "bg-indigo-600" : "hover:bg-white/5"
-                }`}
+                className={`w-8 h-8 rounded flex items-center justify-center transition ${strokeWidth === w ? "bg-indigo-600" : "hover:bg-white/5"
+                  }`}
                 title={`Stroke Width: ${w}px`}
               >
                 <div
@@ -2443,10 +2546,10 @@ export default function WhiteboardPage({ params }: Props) {
                   p === "grid"
                     ? "dots"
                     : p === "dots"
-                    ? "lines"
-                    : p === "lines"
-                    ? "none"
-                    : "grid"
+                      ? "lines"
+                      : p === "lines"
+                        ? "none"
+                        : "grid"
                 )
               }
               className={`px-3 py-1.5 rounded-lg border bg-[${themeColors.card}]/95 backdrop-blur-xl ${themeColors.border} text-xs ${themeColors.text} hover:text-white capitalize transition flex items-center gap-1`}
@@ -2458,11 +2561,10 @@ export default function WhiteboardPage({ params }: Props) {
 
             <button
               onClick={() => setGridSnap(!gridSnap)}
-              className={`px-3 py-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${
-                gridSnap
+              className={`px-3 py-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${gridSnap
                   ? "bg-indigo-600 border-indigo-500 text-white"
                   : `bg-[${themeColors.card}]/95 backdrop-blur-xl ${themeColors.border} ${themeColors.text} hover:text-white`
-              }`}
+                }`}
               title="Grid Snap"
             >
               <FiMaximize2 size={14} />

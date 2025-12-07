@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react"; // ✅ Added
 import { dashboardService } from '@/app/(service)/dashboard.service';
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function NewWhiteboard() {
   const router = useRouter();
+  const { data: session, status } = useSession(); // ✅ Added NextAuth support
+  
   const [step, setStep] = useState<"template" | "settings" | "invite">("template");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [boardName, setBoardName] = useState("");
@@ -15,6 +18,7 @@ export default function NewWhiteboard() {
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null); // ✅ Added error state
   
   const [collaborationFeatures, setCollaborationFeatures] = useState([
     { id: "cursors", label: "Show live cursors", enabled: true },
@@ -35,6 +39,19 @@ export default function NewWhiteboard() {
     { id: "presentation", name: "Presentation", description: "Create interactive slides and decks", icon: "📽️", gradient: "from-amber-500 to-red-500", popular: false },
   ];
 
+  // ✅ UNIFIED TOKEN GETTER (matches workspace logic)
+  const getToken = useCallback(() => {
+    // Try NextAuth session first
+    if (session && (session as any).accessToken) {
+      return (session as any).accessToken;
+    }
+    // Fallback to LocalStorage
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("auth_token");
+    }
+    return null;
+  }, [session]);
+
   const handleAddEmail = () => {
     if (emailInput && !inviteEmails.includes(emailInput)) {
       setInviteEmails([...inviteEmails, emailInput]);
@@ -42,20 +59,31 @@ export default function NewWhiteboard() {
     }
   };
 
+  // ✅ IMPROVED CREATE BOARD WITH BETTER ERROR HANDLING
   const handleCreateBoard = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('auth_token');
+      setError(null);
+      
+      // ✅ Use unified token getter
+      const token = getToken();
 
       if (!token) {
-        alert("Please login first");
-        router.push('/login');
+        setError("Please login first");
+        setTimeout(() => router.push('/login'), 1500);
         return;
       }
 
       const finalTitle:any = boardName.trim() || 
         (selectedTemplate ? templates.find(t => t.id === selectedTemplate)?.name : "Untitled Board");
       
+      console.log("📤 Creating dashboard with:", {
+        title: finalTitle,
+        template: selectedTemplate,
+        isPublic,
+      });
+
+      // ✅ Better error handling for API call
       const response:any = await dashboardService.createDashboard(token, {
         title: finalTitle,
         description: `Created from ${selectedTemplate || 'blank'} template`,
@@ -63,12 +91,36 @@ export default function NewWhiteboard() {
         isPublic: isPublic,
       });
 
-      const dashboardId = response?.dashboard?.id || response?.id;
+      console.log("✅ Dashboard created:", response);
+
+      // ✅ More robust ID extraction
+      const dashboardId = response?.dashboard?.id || response?.data?.id || response?.id;
+      
+      if (!dashboardId) {
+        throw new Error("Dashboard created but no ID returned from server");
+      }
+
+      // ✅ Navigate to the new dashboard
       router.push(`/workspace/${dashboardId}`);
 
     } catch (error: any) {
-      console.error("Failed to create board:", error);
-      alert(error.message || "Failed to create dashboard");
+      console.error("❌ Failed to create board:", error);
+      
+      // ✅ Better error messages
+      let errorMessage = "Failed to create dashboard";
+      
+      if (error.response?.status === 401) {
+        errorMessage = "Session expired. Please login again.";
+        setTimeout(() => router.push('/login'), 2000);
+      } else if (error.response?.status === 403) {
+        errorMessage = "You don't have permission to create dashboards.";
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -89,6 +141,22 @@ export default function NewWhiteboard() {
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: -20 }
   };
+
+  // ✅ Show loading state while checking auth
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen bg-[#0c0c0f] flex items-center justify-center">
+        <motion.div
+          className="text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading...</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0c0c0f] text-gray-200">
@@ -166,6 +234,30 @@ export default function NewWhiteboard() {
       </motion.header>
 
       <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12">
+        {/* ✅ GLOBAL ERROR DISPLAY */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              className="mb-6 bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex items-center justify-between"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <span className="text-red-300 text-sm flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                {error}
+              </span>
+              <button onClick={() => setError(null)} className="text-red-300 hover:text-white">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {/* Step 1: Template Selection */}
           {step === "template" && (
