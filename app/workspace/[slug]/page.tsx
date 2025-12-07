@@ -1,8 +1,22 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import {
+  FiMic, FiMicOff, FiVideo, FiVideoOff, FiUsers, FiUserPlus,
+  FiShare2, FiMessageCircle, FiActivity, FiBell, FiClock,
+  FiSun, FiMoon, FiArrowLeft, FiX, FiSend, FiCheckCircle,
+  FiAlertCircle, FiMail, FiSettings, FiZoomIn, FiZoomOut,
+  FiGrid, FiMaximize2, FiTrash2, FiCopy, FiLock, FiUnlock,
+  FiRotateCcw, FiRotateCw, FiDownload, FiLayers, FiHelpCircle,
+  FiMousePointer, FiMove, FiSquare, FiCircle, FiArrowRight,
+  FiMinus, FiEdit3, FiType, FiFileText, FiMessageSquare,
+  FiThumbsUp, FiHeart, FiZap, FiEye, FiPlus
+} from "react-icons/fi";
+import { MdLocalHospital } from "react-icons/md";
+import { GiThroneKing } from "react-icons/gi";
 
+// --- Types ---
 type Props = {
   params: Promise<{ slug: string }>;
 };
@@ -22,113 +36,769 @@ interface DrawElement {
   fillColor: string;
   strokeWidth: number;
   text?: string;
+  opacity?: number;
+  locked?: boolean;
+  comments?: Comment[];
+  reactions?: Reaction[];
+  createdBy?: string;
+  createdAt?: number;
 }
-export const runtime = 'edge';
 
+interface RemoteCursor {
+  clientId: string;
+  x: number;
+  y: number;
+  color: string;
+  username: string;
+  avatar: string;
+  status: "online" | "busy" | "away";
+  role: "admin" | "editor" | "viewer";
+}
+
+interface VideoStream {
+  clientId: string;
+  stream: MediaStream;
+  username: string;
+}
+
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  avatar: string;
+  message: string;
+  timestamp: number;
+  mentions?: string[];
+  replyTo?: string;
+}
+
+interface Comment {
+  id: string;
+  userId: string;
+  username: string;
+  avatar: string;
+  text: string;
+  timestamp: number;
+}
+
+interface Activity {
+  id: string;
+  userId: string;
+  username: string;
+  avatar: string;
+  action: string;
+  details: string;
+  timestamp: number;
+  type: "create" | "update" | "delete" | "invite" | "join" | "comment";
+}
+
+interface Notification {
+  id: string;
+  type: "mention" | "comment" | "update" | "invite";
+  message: string;
+  timestamp: number;
+  read: boolean;
+}
+
+interface Reaction {
+  userId: string;
+  username: string;
+  emoji: string;
+  timestamp: number;
+}
+
+// --- WebRTC Config ---
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:global.stun.twilio.com:3478" }
+  ]
+};
+
+// --- Template Generator ---
+const generateTemplate = (type: string): DrawElement[] => {
+  const baseId = Date.now().toString();
+  const createId = (idx: number) => `${baseId}-${idx}`;
+  const elements: DrawElement[] = [];
+
+  switch (type.toLowerCase()) {
+    case "kanban": {
+      const kCols = ["To Do", "In Progress", "Done"];
+      kCols.forEach((col, i) => {
+        elements.push({
+          id: createId(i),
+          type: "rectangle",
+          startPoint: { x: 100 + i * 320, y: 100 },
+          endPoint: { x: 400 + i * 320, y: 160 },
+          color: "#ffffff",
+          fillColor: "#2d3436",
+          strokeWidth: 2,
+          createdAt: Date.now()
+        });
+        elements.push({
+          id: createId(i + 10),
+          type: "text",
+          startPoint: { x: 120 + i * 320, y: 140 },
+          color: "#ffffff",
+          fillColor: "transparent",
+          strokeWidth: 3,
+          text: col,
+          createdAt: Date.now()
+        });
+        elements.push({
+          id: createId(i + 20),
+          type: "rectangle",
+          startPoint: { x: 100 + i * 320, y: 170 },
+          endPoint: { x: 400 + i * 320, y: 600 },
+          color: "#ffffff40",
+          fillColor: "transparent",
+          strokeWidth: 2,
+          createdAt: Date.now()
+        });
+      });
+      break;
+    }
+
+    case "brainstorm": {
+      elements.push({
+        id: createId(1),
+        type: "text",
+        startPoint: { x: 350, y: 80 },
+        color: "#ffffff",
+        fillColor: "transparent",
+        strokeWidth: 4,
+        text: "Brainstorming Session",
+        createdAt: Date.now()
+      });
+      const stickies = ["#ff7675", "#ffeaa7", "#74b9ff", "#55efc4"];
+      stickies.forEach((color, i) => {
+        elements.push({
+          id: createId(i + 10),
+          type: "sticky",
+          startPoint: { x: 100 + i * 180, y: 150 },
+          endPoint: { x: 250 + i * 180, y: 300 },
+          color: "#ffffff",
+          fillColor: color,
+          strokeWidth: 1,
+          text: "Idea " + (i + 1),
+          createdAt: Date.now()
+        });
+      });
+      break;
+    }
+
+    case "flowchart": {
+      elements.push({
+        id: createId(1),
+        type: "circle",
+        startPoint: { x: 400, y: 50 },
+        endPoint: { x: 550, y: 120 },
+        color: "#74b9ff",
+        fillColor: "#000",
+        strokeWidth: 2,
+        createdAt: Date.now()
+      });
+      elements.push({
+        id: createId(2),
+        type: "text",
+        startPoint: { x: 450, y: 95 },
+        color: "#fff",
+        fillColor: "transparent",
+        strokeWidth: 2,
+        text: "Start",
+        createdAt: Date.now()
+      });
+      break;
+    }
+
+    case "mindmap": {
+      elements.push({
+        id: createId(1),
+        type: "circle",
+        startPoint: { x: 400, y: 300 },
+        endPoint: { x: 600, y: 450 },
+        color: "#a29bfe",
+        fillColor: "#a29bfe40",
+        strokeWidth: 2,
+        createdAt: Date.now()
+      });
+      elements.push({
+        id: createId(2),
+        type: "text",
+        startPoint: { x: 460, y: 385 },
+        color: "#fff",
+        fillColor: "transparent",
+        strokeWidth: 3,
+        text: "Main Idea",
+        createdAt: Date.now()
+      });
+      break;
+    }
+  }
+  return elements;
+};
+
+// --- Main Component ---
 export default function WhiteboardPage({ params }: Props) {
   const [slug, setSlug] = useState<string>("");
+  const socketRef = useRef<WebSocket | null>(null);
+  const [clientId, setClientId] = useState<string>("");
+  const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+  const lastCursorUpdate = useRef<number>(0);
+
+  const userColor = useMemo(() => {
+    const colors = ["#FF5733", "#33FF57", "#3357FF", "#F033FF", "#FF33A8", "#33FFF5"];
+    return colors[Math.floor(Math.random() * colors.length)];
+  }, []);
+
+  // User Profile
+  const [currentUser, setCurrentUser] = useState({
+    username: "You",
+    avatar: "https://ui-avatars.com/api/?name=You&background=random",
+    status: "online" as "online" | "busy" | "away",
+    role: "admin" as "admin" | "editor" | "viewer"
+  });
+
+  // Canvas State
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedTool, setSelectedTool] = useState<string>("select");
   const [strokeColor, setStrokeColor] = useState("#ffffff");
   const [fillColor, setFillColor] = useState("transparent");
   const [strokeWidth, setStrokeWidth] = useState(2);
+  const [opacity, setOpacity] = useState(100);
   const [zoom, setZoom] = useState(100);
-  const [showGrid, setShowGrid] = useState(true);
-  const [showProperties, setShowProperties] = useState(true);
-  const [showChat, setShowChat] = useState(false);
-
+  const [gridSnap, setGridSnap] = useState(false);
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
-
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [invitees, setInvitees] = useState<string[]>([]);
-  const [copySuccess, setCopySuccess] = useState("");
-
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState("");
-  const [textInputPos, setTextInputPos] = useState<Point>({ x: 0, y: 0 });
-
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<Point | null>(null);
-
   const [elements, setElements] = useState<DrawElement[]>([]);
   const [currentElement, setCurrentElement] = useState<DrawElement | null>(null);
   const [startPoint, setStartPoint] = useState<Point | null>(null);
   const [history, setHistory] = useState<DrawElement[][]>([]);
   const [historyStep, setHistoryStep] = useState(-1);
 
-  // Collaboration features
+  // Selection & Editing
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<Point | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [textInputPos, setTextInputPos] = useState<Point>({ x: 0, y: 0 });
+
+  // Voice & Video
+  const [isMicOn, setIsMicOn] = useState(false);
+  const localAudioStreamRef = useRef<MediaStream | null>(null);
+  const audioPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+
+  const [isVideoOn, setIsVideoOn] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
-  const [showBreakoutRooms, setShowBreakoutRooms] = useState(false);
-  const [showPolls, setShowPolls] = useState(false);
-  const [showTaskManager, setShowTaskManager] = useState(false);
+  const localVideoStreamRef = useRef<MediaStream | null>(null);
+  const videoPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const [remoteVideoStreams, setRemoteVideoStreams] = useState<VideoStream[]>([]);
 
-  const tools = [
-    { id: "select", icon: "🖱️", label: "Selection", shortcut: "V" },
-    { id: "hand", icon: "✋", label: "Pan", shortcut: "H" },
-    { id: "rectangle", icon: "▭", label: "Rectangle", shortcut: "R" },
-    { id: "circle", icon: "○", label: "Circle", shortcut: "O" },
-    { id: "arrow", icon: "→", label: "Arrow", shortcut: "A" },
-    { id: "line", icon: "╱", label: "Line", shortcut: "L" },
-    { id: "draw", icon: "✏️", label: "Draw", shortcut: "P" },
-    { id: "text", icon: "T", label: "Text", shortcut: "T" },
-    { id: "sticky", icon: "📝", label: "Sticky Note", shortcut: "S" },
-    { id: "eraser", icon: "🧹", label: "Eraser", shortcut: "E" },
-  ];
+  // UI Features
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [showLayers, setShowLayers] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showActivityFeed, setShowActivityFeed] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [copySuccess, setCopySuccess] = useState("");
+  const [bgPattern, setBgPattern] = useState<"grid" | "dots" | "lines" | "none">("grid");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
-  const colors = ["#ffffff", "#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dfe6e9", "#a29bfe", "#fd79a8", "#fdcb6e"];
+  // Invite System
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitedUsers, setInvitedUsers] = useState<string[]>([]);
+  const [inviteStatus, setInviteStatus] = useState("");
 
-  const activePeople = [
-    { name: "You", avatar: "JD", color: "from-indigo-500 to-violet-500" },
-    { name: "Sarah Chen", avatar: "SC", color: "from-pink-500 to-rose-500" },
-    { name: "Mike Johnson", avatar: "MJ", color: "from-cyan-500 to-blue-500" },
-  ];
+  // Chat System
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Activity Feed
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  // Notifications
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Comments
+  const [commentInput, setCommentInput] = useState("");
+  const [showCommentFor, setShowCommentFor] = useState<string | null>(null);
+
+  // --- INIT SLUG ---
   useEffect(() => {
     params.then(p => setSlug(p.slug));
   }, [params]);
 
+  // --- NEW: Capture token from URL and store in localStorage (for shared links) ---
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-    redrawCanvas();
-  }, [elements, zoom, panOffset, selectedElementId, currentElement, editingTextId]);
-
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const scale = zoom / 100;
-    ctx.save();
-    ctx.translate(panOffset.x, panOffset.y);
-    ctx.scale(scale, scale);
-
-    elements.forEach(element => {
-      drawElement(ctx, element);
-      if (element.id === selectedElementId && element.id !== editingTextId) {
-        drawResizeHandles(ctx, element);
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      const urlToken = url.searchParams.get("token");
+      if (urlToken) {
+        localStorage.setItem("auth_token", urlToken);
       }
-    });
+    } catch {
+      // ignore URL parse errors
+    }
+  }, []);
 
-    if (currentElement) {
-      drawElement(ctx, currentElement);
+  // Share URL (now includes token when available)
+  useEffect(() => {
+    if (typeof window !== "undefined" && slug) {
+      const base = `${window.location.origin}/workspace/${slug}`;
+      const token = typeof window !== "undefined"
+        ? localStorage.getItem("auth_token")
+        : null;
+      if (token) {
+        setShareUrl(`${base}?token=${encodeURIComponent(token)}`);
+      } else {
+        setShareUrl(base);
+      }
+    }
+  }, [slug]);
+
+  // Theme Effect
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+  }, [theme]);
+
+  // WebSocket (updated to require non-empty token and URL-encode it)
+  useEffect(() => {
+    if (!slug) return;
+
+    const token = (typeof window !== "undefined")
+      ? localStorage.getItem("auth_token")
+      : null;
+
+    if (!token) {
+      console.error("❌ No auth token found, skipping WebSocket connection");
+      return;
     }
 
-    ctx.restore();
-  }, [elements, currentElement, zoom, panOffset, selectedElementId, editingTextId]);
+    const wsUrl = `ws://localhost:5000/ws/whiteboard/${slug}?token=${encodeURIComponent(
+      token
+    )}`;
+    const ws = new WebSocket(wsUrl);
 
+    socketRef.current = ws;
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected");
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        await handleSocketMessage(message);
+      } catch (error) {
+        console.error("Socket parse error", error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("❌ WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("🔌 WebSocket disconnected");
+    };
+
+    return () => {
+      if (localAudioStreamRef.current) {
+        localAudioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (localVideoStreamRef.current) {
+        localVideoStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      ws.close();
+    };
+  }, [slug]);
+
+  const addToHistory = (newElements: DrawElement[]) => {
+    const newHistory = history.slice(0, historyStep + 1);
+    newHistory.push(newElements);
+    setHistory(newHistory);
+    setHistoryStep(newHistory.length - 1);
+  };
+
+  const addNotification = (type: Notification["type"], message: string) => {
+    const notification: Notification = {
+      id: Date.now().toString(),
+      type,
+      message,
+      timestamp: Date.now(),
+      read: false
+    };
+    setNotifications(prev => [notification, ...prev]);
+    setUnreadCount(prev => prev + 1);
+  };
+
+  // WebRTC
+  const createPeer = (
+    targetId: string,
+    stream: MediaStream | null,
+    type: "voice" | "video",
+    peersMap: Map<string, RTCPeerConnection>
+  ) => {
+    if (peersMap.has(targetId)) return peersMap.get(targetId)!;
+    const peer = new RTCPeerConnection(ICE_SERVERS);
+    peersMap.set(targetId, peer);
+
+    if (stream) stream.getTracks().forEach(track => peer.addTrack(track, stream));
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
+          type: type === "voice" ? "voice_signal" : "video_signal",
+          targetId: targetId,
+          signal: { type: "candidate", candidate: event.candidate }
+        }));
+      }
+    };
+
+    peer.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (!remoteStream) return;
+
+      if (type === "voice") {
+        const audioId = `audio-${targetId}`;
+        let audio = document.getElementById(audioId) as HTMLAudioElement;
+        if (!audio) {
+          audio = document.createElement("audio");
+          audio.id = audioId;
+          audio.autoplay = true;
+          (audio as any).playsInline = true;
+          document.body.appendChild(audio);
+        }
+        audio.srcObject = remoteStream;
+      } else if (type === "video") {
+        setRemoteVideoStreams(prev => {
+          if (prev.find(v => v.clientId === targetId)) return prev;
+          const userCursor = remoteCursors.find(c => c.clientId === targetId);
+          return [
+            ...prev,
+            {
+              clientId: targetId,
+              stream: remoteStream,
+              username: userCursor?.username || "User"
+            }
+          ];
+        });
+      }
+    };
+
+    return peer;
+  };
+
+  const toggleMic = async () => {
+    if (isMicOn) {
+      if (localAudioStreamRef.current) {
+        localAudioStreamRef.current.getTracks().forEach(track => track.stop());
+        localAudioStreamRef.current = null;
+      }
+      setIsMicOn(false);
+      socketRef.current?.send(JSON.stringify({ type: "leave_voice" }));
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        localAudioStreamRef.current = stream;
+        setIsMicOn(true);
+        socketRef.current?.send(JSON.stringify({ type: "join_voice" }));
+      } catch (err) {
+        console.error("Mic error", err);
+      }
+    }
+  };
+
+  const toggleVideo = async () => {
+    if (isVideoOn) {
+      if (localVideoStreamRef.current) {
+        localVideoStreamRef.current.getTracks().forEach(track => track.stop());
+        localVideoStreamRef.current = null;
+      }
+      setIsVideoOn(false);
+      setShowVideoCall(false);
+      socketRef.current?.send(JSON.stringify({ type: "leave_video" }));
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        localVideoStreamRef.current = stream;
+        setIsVideoOn(true);
+        setShowVideoCall(true);
+        socketRef.current?.send(JSON.stringify({ type: "join_video" }));
+      } catch (err) {
+        console.error("Camera error", err);
+      }
+    }
+  };
+
+  // Chat Functions
+  const sendChatMessage = () => {
+    if (!chatInput.trim()) return;
+
+    socketRef.current?.send(JSON.stringify({
+      type: "chat_message",
+      message: chatInput
+    }));
+
+    setChatInput("");
+  };
+
+  const handleChatTyping = (text: string) => {
+    setChatInput(text);
+    if (text && socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "typing_start" }));
+    }
+  };
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  // Comment Functions
+  const addComment = () => {
+    if (!commentInput.trim() || !selectedElementId) return;
+
+    socketRef.current?.send(JSON.stringify({
+      type: "add_comment",
+      elementId: selectedElementId,
+      text: commentInput
+    }));
+
+    setCommentInput("");
+    setShowCommentFor(null);
+  };
+
+  // Reaction Functions
+  const addReaction = (elementId: string, emoji: string) => {
+    socketRef.current?.send(JSON.stringify({
+      type: "add_reaction",
+      elementId,
+      emoji
+    }));
+  };
+
+  // Invite User Function
+  const handleInviteUser = async () => {
+    if (!inviteEmail || !inviteEmail.includes("@")) {
+      setInviteStatus("Please enter a valid email");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch(`http://localhost:5000/api/dashboards/${slug}/invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: inviteEmail })
+      });
+
+      if (response.ok) {
+        setInvitedUsers([...invitedUsers, inviteEmail]);
+        setInviteStatus(`✓ Invited ${inviteEmail}`);
+        setInviteEmail("");
+        setTimeout(() => setInviteStatus(""), 3000);
+        addNotification("invite", `Invited ${inviteEmail} to board`);
+      } else {
+        setInviteStatus("✗ Failed to send invite");
+      }
+    } catch (error) {
+      console.error("Invite error:", error);
+      setInviteStatus("✗ Error sending invite");
+    }
+  };
+
+  const handleSocketMessage = async (msg: any) => {
+    switch (msg.type) {
+      case "connection_established":
+        setClientId(msg.clientId);
+        setCurrentUser(prev => ({
+          ...prev,
+          username: msg.username,
+          avatar: msg.avatar
+        }));
+
+        // Load history
+        if (msg.history && msg.history.length > 0) {
+          setElements(msg.history);
+        } else {
+          // Check if template needed
+          const token = localStorage.getItem("auth_token");
+          if (token && slug) {
+            try {
+              const res = await fetch(`http://localhost:5000/api/dashboards/${slug}`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              const dashboard = await res.json();
+              let type = "blank";
+              const desc = dashboard.description?.toLowerCase() || "";
+              if (desc.includes("kanban")) type = "kanban";
+              else if (desc.includes("brainstorm")) type = "brainstorm";
+              else if (desc.includes("flowchart")) type = "flowchart";
+              else if (desc.includes("mindmap")) type = "mindmap";
+
+              if (type !== "blank") {
+                const templateElements = generateTemplate(type);
+                setElements(templateElements);
+                socketRef.current?.send(JSON.stringify({
+                  type: "batch_draw_action",
+                  elements: templateElements
+                }));
+              }
+            } catch (e) {
+              console.error("Template init failed", e);
+            }
+          }
+        }
+
+        // Load chat messages
+        if (msg.chatMessages) {
+          setChatMessages(msg.chatMessages);
+        }
+
+        // Load activities
+        if (msg.activities) {
+          setActivities(msg.activities);
+        }
+
+        // Load presence
+        if (msg.presence) {
+          setRemoteCursors(msg.presence.filter((p: any) => p.userId !== msg.userId));
+        }
+        break;
+
+      case "draw_action":
+        setElements(prev => {
+          if (prev.find(e => e.id === msg.element.id)) return prev;
+          return [...prev, msg.element];
+        });
+        if (msg.username && msg.username !== currentUser.username) {
+          addNotification("update", `${msg.username} added a ${msg.element.type}`);
+        }
+        break;
+
+      case "batch_draw_action":
+        setElements(prev => {
+          const newElements = msg.elements.filter((e: DrawElement) =>
+            !prev.find(existing => existing.id === e.id)
+          );
+          return [...prev, ...newElements];
+        });
+        break;
+
+      case "element_update":
+        setElements(prev => prev.map(el =>
+          el.id === msg.element.id ? msg.element : el
+        ));
+        break;
+
+      case "element_comment_added":
+        setElements(prev => prev.map(el => {
+          if (el.id === msg.elementId) {
+            return {
+              ...el,
+              comments: [...(el.comments || []), msg.comment]
+            };
+          }
+          return el;
+        }));
+        addNotification("comment", `${msg.comment.username} commented on an element`);
+        break;
+
+      case "element_reaction":
+        setElements(prev => prev.map(el => {
+          if (el.id === msg.elementId) {
+            return {
+              ...el,
+              reactions: [...(el.reactions || []), msg.reaction]
+            };
+          }
+          return el;
+        }));
+        break;
+
+      case "clear_board":
+        setElements([]);
+        break;
+
+      case "cursor_move":
+        setRemoteCursors(prev => {
+          const others = prev.filter(c => c.clientId !== msg.clientId);
+          if (msg.clientId === clientId) return others;
+          return [
+            ...others,
+            {
+              clientId: msg.clientId,
+              x: msg.x,
+              y: msg.y,
+              color: msg.color,
+              username: msg.username,
+              avatar: msg.avatar || `https://ui-avatars.com/api/?name=${msg.username}`,
+              status: msg.status || "online",
+              role: msg.role || "editor"
+            }
+          ];
+        });
+        break;
+
+      case "user_left":
+        setRemoteCursors(prev => prev.filter(c => c.clientId !== msg.clientId));
+        if (msg.activity) {
+          setActivities(prev => [msg.activity, ...prev].slice(0, 50));
+        }
+        break;
+
+      case "user_joined":
+        if (msg.activity) {
+          setActivities(prev => [msg.activity, ...prev].slice(0, 50));
+        }
+        addNotification("invite", `${msg.username} joined the board`);
+        break;
+
+      case "chat_message":
+        setChatMessages(prev => [...prev, msg.message]);
+        break;
+
+      case "typing_indicator":
+        if (msg.isTyping) {
+          setTypingUsers(prev => [...new Set([...prev, msg.username])]);
+        } else {
+          setTypingUsers(prev => prev.filter(u => u !== msg.username));
+        }
+        break;
+
+      case "activity":
+        setActivities(prev => [msg.activity, ...prev].slice(0, 50));
+        break;
+
+      case "presence_update":
+        setRemoteCursors(prev => prev.map(c =>
+          c.clientId === msg.clientId ? { ...c, status: msg.status } : c
+        ));
+        break;
+    }
+  };
+
+  // Drawing functions
   const drawElement = (ctx: CanvasRenderingContext2D, element: DrawElement) => {
     if (element.id === editingTextId) return;
+
+    ctx.globalAlpha = (element.opacity || 100) / 100;
     ctx.strokeStyle = element.color;
     ctx.fillStyle = element.fillColor;
     ctx.lineWidth = element.strokeWidth;
@@ -140,22 +810,20 @@ export default function WhiteboardPage({ params }: Props) {
         if (element.endPoint) {
           const x = Math.min(element.startPoint.x, element.endPoint.x);
           const y = Math.min(element.startPoint.y, element.endPoint.y);
-          const width = Math.abs(element.endPoint.x - element.startPoint.x);
-          const height = Math.abs(element.endPoint.y - element.startPoint.y);
-          if (element.fillColor !== "transparent") {
-            ctx.fillRect(x, y, width, height);
-          }
-          ctx.strokeRect(x, y, width, height);
+          const w = Math.abs(element.endPoint.x - element.startPoint.x);
+          const h = Math.abs(element.endPoint.y - element.startPoint.y);
+          if (element.fillColor !== "transparent") ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
         }
         break;
 
       case "circle":
         if (element.endPoint) {
-          const radiusX = Math.abs(element.endPoint.x - element.startPoint.x);
-          const radiusY = Math.abs(element.endPoint.y - element.startPoint.y);
-          const radius = Math.sqrt(radiusX * radiusX + radiusY * radiusY);
+          const rX = Math.abs(element.endPoint.x - element.startPoint.x);
+          const rY = Math.abs(element.endPoint.y - element.startPoint.y);
+          const r = Math.sqrt(rX * rX + rY * rY);
           ctx.beginPath();
-          ctx.arc(element.startPoint.x, element.startPoint.y, radius, 0, 2 * Math.PI);
+          ctx.arc(element.startPoint.x, element.startPoint.y, r, 0, 2 * Math.PI);
           if (element.fillColor !== "transparent") ctx.fill();
           ctx.stroke();
         }
@@ -187,7 +855,7 @@ export default function WhiteboardPage({ params }: Props) {
 
       case "text":
         if (element.text) {
-          ctx.font = `${element.strokeWidth * 8}px Arial`;
+          ctx.font = `${element.strokeWidth * 8 + 10}px Arial`;
           ctx.fillStyle = element.color;
           ctx.fillText(element.text, element.startPoint.x, element.startPoint.y);
         }
@@ -195,25 +863,83 @@ export default function WhiteboardPage({ params }: Props) {
 
       case "sticky":
         if (element.endPoint) {
-          const x = Math.min(element.startPoint.x, element.endPoint.x);
-          const y = Math.min(element.startPoint.y, element.endPoint.y);
-          const width = 150;
-          const height = 150;
+          const x = element.startPoint.x;
+          const y = element.startPoint.y;
+          const w = Math.abs(element.endPoint.x - element.startPoint.x);
+          const h = Math.abs(element.endPoint.y - element.startPoint.y);
           ctx.fillStyle = element.fillColor || "#ffeaa7";
-          ctx.fillRect(x, y, width, height);
-          ctx.strokeStyle = "#f0ad4e";
-          ctx.strokeRect(x, y, width, height);
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeStyle = "rgba(0,0,0,0.1)";
+          ctx.strokeRect(x, y, w, h);
           if (element.text) {
-            ctx.fillStyle = "#000000";
+            ctx.fillStyle = "#000";
             ctx.font = "14px Arial";
-            const lines = wrapText(ctx, element.text, width - 20);
-            lines.forEach((line, i) => {
-              ctx.fillText(line, x + 10, y + 30 + i * 20);
-            });
+            ctx.fillText(element.text, x + 10, y + 30);
           }
         }
         break;
     }
+
+    // Draw comment indicator
+    if (element.comments && element.comments.length > 0) {
+      ctx.save();
+      ctx.fillStyle = "#FF5733";
+      ctx.font = "bold 10px Arial";
+      const badge = element.comments.length.toString();
+      const bx = element.startPoint.x + (element.endPoint ? Math.abs(element.endPoint.x - element.startPoint.x) : 20) - 15;
+      const by = element.startPoint.y - 8;
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText(badge, bx - 3, by + 3);
+      ctx.restore();
+    }
+
+    // Draw reactions
+    if (element.reactions && element.reactions.length > 0) {
+      const uniqueReactions = element.reactions.reduce((acc: any, r: Reaction) => {
+        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+        return acc;
+      }, {});
+
+      ctx.save();
+      ctx.font = "14px Arial";
+      let offsetX = 0;
+      Object.entries(uniqueReactions).forEach(([emoji, count]: [string, any]) => {
+        const rx = element.startPoint.x + offsetX;
+        const ry = element.startPoint.y + (element.endPoint ? Math.abs(element.endPoint.y - element.startPoint.y) : 20) + 5;
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(rx, ry, 30, 20);
+        ctx.fillText(`${emoji} ${count}`, rx + 2, ry + 14);
+        offsetX += 35;
+      });
+      ctx.restore();
+    }
+
+    ctx.globalAlpha = 1;
+  };
+
+  const drawArrowHead = (
+    ctx: CanvasRenderingContext2D,
+    from: Point,
+    to: Point,
+    strokeWidth: number
+  ) => {
+    const headLength = strokeWidth * 5 + 10;
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(
+      to.x - headLength * Math.cos(angle - Math.PI / 6),
+      to.y - headLength * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(
+      to.x - headLength * Math.cos(angle + Math.PI / 6),
+      to.y - headLength * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.stroke();
   };
 
   const drawResizeHandles = (ctx: CanvasRenderingContext2D, element: DrawElement) => {
@@ -234,84 +960,114 @@ export default function WhiteboardPage({ params }: Props) {
       { x: minX, y: minY },
       { x: maxX, y: minY },
       { x: minX, y: maxY },
-      { x: maxX, y: maxY },
+      { x: maxX, y: maxY }
     ];
-
     ctx.fillStyle = "#4299e1";
-    handles.forEach(handle => {
-      ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+    handles.forEach(h => {
+      ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize);
     });
   };
 
-  const drawArrowHead = (ctx: CanvasRenderingContext2D, from: Point, to: Point, strokeWidth: number) => {
-    const headLength = strokeWidth * 5;
-    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+  const drawRemoteCursor = (ctx: CanvasRenderingContext2D, cursor: RemoteCursor) => {
+    ctx.save();
+    ctx.fillStyle = cursor.color || "#f00";
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = 4;
     ctx.beginPath();
-    ctx.moveTo(to.x, to.y);
-    ctx.lineTo(to.x - headLength * Math.cos(angle - Math.PI / 6), to.y - headLength * Math.sin(angle - Math.PI / 6));
-    ctx.moveTo(to.x, to.y);
-    ctx.lineTo(to.x - headLength * Math.cos(angle + Math.PI / 6), to.y - headLength * Math.sin(angle + Math.PI / 6));
-    ctx.stroke();
+    ctx.moveTo(cursor.x, cursor.y);
+    ctx.lineTo(cursor.x + 6, cursor.y + 18);
+    ctx.lineTo(cursor.x + 10, cursor.y + 10);
+    ctx.lineTo(cursor.x + 18, cursor.y + 6);
+    ctx.closePath();
+    ctx.fill();
+
+    const name = cursor.username || "User";
+    ctx.font = "bold 11px Sans-Serif";
+    const textWidth = ctx.measureText(name).width;
+    ctx.fillStyle = cursor.color || "#f00";
+    ctx.fillRect(cursor.x + 12, cursor.y + 12, textWidth + 8, 18);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(name, cursor.x + 16, cursor.y + 24);
+    ctx.restore();
   };
 
-  const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
-    const words = text.split(" ");
-    const lines: string[] = [];
-    let currentLine = "";
-    words.forEach(word => {
-      const testLine = currentLine + word + " ";
-      const metrics = ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine !== "") {
-        lines.push(currentLine);
-        currentLine = word + " ";
-      } else {
-        currentLine = testLine;
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const scale = zoom / 100;
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(scale, scale);
+
+    elements.forEach(element => {
+      drawElement(ctx, element);
+      if (element.id === selectedElementId && element.id !== editingTextId) {
+        drawResizeHandles(ctx, element);
       }
     });
-    lines.push(currentLine);
-    return lines;
-  };
 
+    if (currentElement) drawElement(ctx, currentElement);
+    remoteCursors.forEach(cursor => drawRemoteCursor(ctx, cursor));
+    ctx.restore();
+  }, [elements, currentElement, zoom, panOffset, selectedElementId, editingTextId, remoteCursors]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      redrawCanvas();
+    }
+  }, [redrawCanvas]);
+
+  // Mouse Handlers
   const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scale = zoom / 100;
-    return {
-      x: (e.clientX - rect.left - panOffset.x) / scale,
-      y: (e.clientY - rect.top - panOffset.y) / scale,
-    };
+    let x = (e.clientX - rect.left - panOffset.x) / scale;
+    let y = (e.clientY - rect.top - panOffset.y) / scale;
+
+    if (gridSnap) {
+      const gridSize = 20;
+      x = Math.round(x / gridSize) * gridSize;
+      y = Math.round(y / gridSize) * gridSize;
+    }
+
+    return { x, y };
   };
 
   const getElementAtPoint = (point: Point): DrawElement | null => {
     for (let i = elements.length - 1; i >= 0; i--) {
-      const element = elements[i];
-      if (isPointInElement(point, element)) return element;
+      const el = elements[i];
+      if (el.endPoint) {
+        const minX = Math.min(el.startPoint.x, el.endPoint.x);
+        const maxX = Math.max(el.startPoint.x, el.endPoint.x);
+        const minY = Math.min(el.startPoint.y, el.endPoint.y);
+        const maxY = Math.max(el.startPoint.y, el.endPoint.y);
+        if (point.x >= minX - 5 && point.x <= maxX + 5 && point.y >= minY - 5 && point.y <= maxY + 5) {
+          return el;
+        }
+      }
     }
     return null;
   };
 
-  const isPointInElement = (point: Point, element: DrawElement): boolean => {
-    if (!element.endPoint) return false;
-    const minX = Math.min(element.startPoint.x, element.endPoint.x);
-    const maxX = Math.max(element.startPoint.x, element.endPoint.x);
-    const minY = Math.min(element.startPoint.y, element.endPoint.y);
-    const maxY = Math.max(element.startPoint.y, element.endPoint.y);
-    return point.x >= minX - 5 && point.x <= maxX + 5 && point.y >= minY - 5 && point.y <= maxY + 5;
-  };
-
-  const getResizeHandle = (point: Point, element: DrawElement): string | null => {
-    if (!element.endPoint) return null;
-    const minX = Math.min(element.startPoint.x, element.endPoint.x);
-    const maxX = Math.max(element.startPoint.x, element.endPoint.x);
-    const minY = Math.min(element.startPoint.y, element.endPoint.y);
-    const maxY = Math.max(element.startPoint.y, element.endPoint.y);
-    const handleSize = 8;
-    if (Math.abs(point.x - minX) < handleSize && Math.abs(point.y - minY) < handleSize) return "nw";
-    if (Math.abs(point.x - maxX) < handleSize && Math.abs(point.y - minY) < handleSize) return "ne";
-    if (Math.abs(point.x - minX) < handleSize && Math.abs(point.y - maxY) < handleSize) return "sw";
-    if (Math.abs(point.x - maxX) < handleSize && Math.abs(point.y - maxY) < handleSize) return "se";
-    return null;
+  const startTextEditing = (el: DrawElement) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = zoom / 100;
+    const x = rect.left + (el.startPoint.x * scale + panOffset.x);
+    const y = rect.top + (el.startPoint.y * scale + panOffset.y);
+    setEditingTextId(el.id);
+    setEditingText(el.text || "");
+    setTextInputPos({ x, y });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -324,25 +1080,14 @@ export default function WhiteboardPage({ params }: Props) {
     }
 
     if (selectedTool === "select") {
-      const clickedElement = getElementAtPoint(point);
-      if (clickedElement && selectedElementId === clickedElement.id) {
-        const handle = getResizeHandle(point, clickedElement);
-        if (handle) {
-          setResizeHandle(handle);
-          setIsDrawing(true);
-          setStartPoint(point);
+      const clicked = getElementAtPoint(point);
+      if (clicked) {
+        if (clicked.locked) return;
+        setSelectedElementId(clicked.id);
+        if (clicked.type === "text" || clicked.type === "sticky") {
+          startTextEditing(clicked);
           return;
         }
-        if (clickedElement.type === "text" || clickedElement.type === "sticky") {
-          startTextEditing(clickedElement);
-          return;
-        }
-        setIsDragging(true);
-        setDragStart(point);
-        return;
-      }
-      if (clickedElement) {
-        setSelectedElementId(clickedElement.id);
         setIsDragging(true);
         setDragStart(point);
       } else {
@@ -354,32 +1099,26 @@ export default function WhiteboardPage({ params }: Props) {
     setStartPoint(point);
     setIsDrawing(true);
 
-    if (selectedTool === "text") {
-      startTextEditing({
+    if (selectedTool === "text" || selectedTool === "sticky") {
+      const newEl: DrawElement = {
         id: Date.now().toString(),
-        type: "text",
+        type: selectedTool,
         startPoint: point,
+        endPoint: selectedTool === "sticky" ? { x: point.x + 150, y: point.y + 150 } : undefined,
         color: strokeColor,
-        fillColor,
+        fillColor: selectedTool === "sticky" && fillColor === "transparent" ? "#ffeaa7" : fillColor,
         strokeWidth,
         text: "",
-      } as DrawElement);
-      return;
-    }
-
-    if (selectedTool === "sticky") {
-      const newElement: DrawElement = {
-        id: Date.now().toString(),
-        type: "sticky",
-        startPoint: point,
-        endPoint: { x: point.x + 150, y: point.y + 150 },
-        color: strokeColor,
-        fillColor: fillColor === "transparent" ? "#ffeaa7" : fillColor,
-        strokeWidth,
-        text: "",
+        opacity,
+        createdBy: clientId,
+        createdAt: Date.now()
       };
-      addElement(newElement);
-      startTextEditing(newElement);
+      setElements(prev => [...prev, newEl]);
+      socketRef.current?.send(JSON.stringify({
+        type: "draw_action",
+        element: newEl
+      }));
+      startTextEditing(newEl);
       return;
     }
 
@@ -391,14 +1130,33 @@ export default function WhiteboardPage({ params }: Props) {
       fillColor,
       strokeWidth,
       points: selectedTool === "draw" ? [point] : undefined,
+      opacity,
+      createdBy: clientId,
+      createdAt: Date.now()
     });
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const now = Date.now();
+    if (socketRef.current?.readyState === WebSocket.OPEN && now - lastCursorUpdate.current > 50) {
+      const rp = getMousePos(e);
+      socketRef.current.send(JSON.stringify({
+        type: "cursor_move",
+        x: rp.x,
+        y: rp.y,
+        color: userColor,
+        username: currentUser.username,
+        avatar: currentUser.avatar,
+        status: currentUser.status,
+        role: currentUser.role
+      }));
+      lastCursorUpdate.current = now;
+    }
+
     if (isPanning && lastPanPoint) {
       const dx = e.clientX - lastPanPoint.x;
       const dy = e.clientY - lastPanPoint.y;
-      setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setPanOffset(p => ({ x: p.x + dx, y: p.y + dy }));
       setLastPanPoint({ x: e.clientX, y: e.clientY });
       return;
     }
@@ -408,60 +1166,32 @@ export default function WhiteboardPage({ params }: Props) {
     if (isDragging && selectedElementId && dragStart) {
       const dx = point.x - dragStart.x;
       const dy = point.y - dragStart.y;
-      const updatedElements = elements.map(el => {
-        if (el.id === selectedElementId) {
-          return {
+      const updated = elements.map(el => {
+        if (el.id === selectedElementId && !el.locked) {
+          const u = {
             ...el,
             startPoint: { x: el.startPoint.x + dx, y: el.startPoint.y + dy },
-            endPoint: el.endPoint ? { x: el.endPoint.x + dx, y: el.endPoint.y + dy } : undefined,
-            points: el.points ? el.points.map(p => ({ x: p.x + dx, y: p.y + dy })) : undefined,
+            endPoint: el.endPoint
+              ? { x: el.endPoint.x + dx, y: el.endPoint.y + dy }
+              : undefined,
+            points: el.points?.map(p => ({ x: p.x + dx, y: p.y + dy }))
           };
+          socketRef.current?.send(JSON.stringify({ type: "element_update", element: u }));
+          return u;
         }
         return el;
       });
-      setElements(updatedElements);
+      setElements(updated);
       setDragStart(point);
       return;
     }
 
     if (!isDrawing || !startPoint) return;
 
-    if (resizeHandle && selectedElementId) {
-      const element = elements.find(el => el.id === selectedElementId);
-      if (element && element.endPoint) {
-        const updatedElements = elements.map(el => {
-          if (el.id === selectedElementId) {
-            const newElement = { ...el };
-            if (resizeHandle === "nw") {
-              newElement.startPoint = point;
-            } else if (resizeHandle === "ne") {
-              newElement.startPoint = { x: el.startPoint.x, y: point.y };
-              newElement.endPoint = { x: point.x, y: el.endPoint!.y };
-            } else if (resizeHandle === "sw") {
-              newElement.startPoint = { x: point.x, y: el.startPoint.y };
-              newElement.endPoint = { x: el.endPoint!.x, y: point.y };
-            } else if (resizeHandle === "se") {
-              newElement.endPoint = point;
-            }
-            return newElement;
-          }
-          return el;
-        });
-        setElements(updatedElements);
-      }
-      return;
-    }
-
     if (selectedTool === "draw") {
-      setCurrentElement({
-        ...currentElement!,
-        points: [...(currentElement!.points || []), point],
-      });
+      setCurrentElement(c => c ? ({ ...c, points: [...(c.points || []), point] }) : null);
     } else {
-      setCurrentElement({
-        ...currentElement!,
-        endPoint: point,
-      });
+      setCurrentElement(c => c ? ({ ...c, endPoint: point }) : null);
     }
   };
 
@@ -471,243 +1201,948 @@ export default function WhiteboardPage({ params }: Props) {
       setLastPanPoint(null);
       return;
     }
+
     if (isDragging) {
       setIsDragging(false);
       setDragStart(null);
       addToHistory(elements);
       return;
     }
-    if (resizeHandle) {
-      setResizeHandle(null);
-      addToHistory(elements);
-    }
+
     if (currentElement) {
-      addElement(currentElement);
+      setElements(prev => [...prev, currentElement!]);
+      socketRef.current?.send(JSON.stringify({
+        type: "draw_action",
+        element: currentElement
+      }));
+      addToHistory([...elements, currentElement]);
       setCurrentElement(null);
     }
+
     setIsDrawing(false);
     setStartPoint(null);
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -10 : 10;
-    setZoom(prev => Math.max(25, Math.min(400, prev + delta)));
-  };
-
-  const startTextEditing = (element: DrawElement) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scale = zoom / 100;
-    setEditingTextId(element.id);
-    setEditingText(element.text || "");
-    setTextInputPos({
-      x: rect.left + (element.startPoint.x * scale + panOffset.x),
-      y: rect.top + (element.startPoint.y * scale + panOffset.y),
-    });
-    if (!elements.find(el => el.id === element.id)) {
-      setElements([...elements, element]);
-    }
-  };
-
+  // Text Editing
   const finishTextEditing = () => {
     if (!editingTextId) return;
-    const updatedElements = elements.map(el => {
+    const updated = elements.map(el => {
       if (el.id === editingTextId) {
-        return { ...el, text: editingText };
+        const u = { ...el, text: editingText };
+        socketRef.current?.send(JSON.stringify({ type: "element_update", element: u }));
+        return u;
       }
       return el;
     });
-    setElements(updatedElements);
-    addToHistory(updatedElements);
+    setElements(updated);
+    addToHistory(updated);
     setEditingTextId(null);
     setEditingText("");
   };
 
-  const addElement = (element: DrawElement) => {
-    const newElements = [...elements, element];
-    setElements(newElements);
-    addToHistory(newElements);
+  // Tools
+  const handleClear = () => {
+    setElements([]);
+    setHistory([[]]);
+    socketRef.current?.send(JSON.stringify({ type: "clear_board" }));
   };
 
-  const addToHistory = (newElements: DrawElement[]) => {
-    const newHistory = history.slice(0, historyStep + 1);
-    newHistory.push(newElements);
-    setHistory(newHistory);
-    setHistoryStep(newHistory.length - 1);
+  const handleExport = () => {
+    const link = document.createElement("a");
+    link.download = `${slug || "board"}.png`;
+    link.href = canvasRef.current?.toDataURL() || "";
+    link.click();
   };
 
   const handleUndo = () => {
     if (historyStep > 0) {
-      setHistoryStep(historyStep - 1);
-      setElements(history[historyStep - 1] || []);
+      setHistoryStep(h => h - 1);
+      setElements(history[historyStep - 1]);
     }
   };
 
   const handleRedo = () => {
     if (historyStep < history.length - 1) {
-      setHistoryStep(historyStep + 1);
+      setHistoryStep(h => h + 1);
       setElements(history[historyStep + 1]);
     }
   };
 
-  const handleClear = () => {
-    setElements([]);
-    setHistory([[]]);
-    setHistoryStep(0);
+  const handleZoomIn = () => setZoom(z => Math.min(z + 10, 400));
+  const handleZoomOut = () => setZoom(z => Math.max(z - 10, 25));
+
+  const handleDuplicate = () => {
+    if (!selectedElementId) return;
+    const el = elements.find(e => e.id === selectedElementId);
+    if (!el) return;
+
+    const duplicated: DrawElement = {
+      ...el,
+      id: Date.now().toString(),
+      startPoint: { x: el.startPoint.x + 20, y: el.startPoint.y + 20 },
+      endPoint: el.endPoint
+        ? { x: el.endPoint.x + 20, y: el.endPoint.y + 20 }
+        : undefined,
+      createdBy: clientId,
+      createdAt: Date.now()
+    };
+
+    setElements(prev => [...prev, duplicated]);
+    socketRef.current?.send(JSON.stringify({
+      type: "draw_action",
+      element: duplicated
+    }));
+    setSelectedElementId(duplicated.id);
   };
 
-  const handleExport = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const link = document.createElement("a");
-    link.download = `${slug || "whiteboard"}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+  const handleLockElement = () => {
+    if (!selectedElementId) return;
+    const updated = elements.map(el => {
+      if (el.id === selectedElementId) {
+        const u = { ...el, locked: !el.locked };
+        socketRef.current?.send(JSON.stringify({ type: "element_update", element: u }));
+        return u;
+      }
+      return el;
+    });
+    setElements(updated);
   };
 
-  const handleZoomIn = () => setZoom(Math.min(zoom + 10, 400));
-  const handleZoomOut = () => setZoom(Math.max(zoom - 10, 25));
-  const handleResetZoom = () => {
-    setZoom(100);
-    setPanOffset({ x: 0, y: 0 });
+  const handleDelete = () => {
+    if (!selectedElementId) return;
+    const updated = elements.filter(el => el.id !== selectedElementId);
+    setElements(updated);
+    addToHistory(updated);
+    setSelectedElementId(null);
   };
 
-  const handleAddInvitee = () => {
-    if (inviteEmail.trim() !== "" && !invitees.includes(inviteEmail.trim())) {
-      setInvitees([...invitees, inviteEmail.trim()]);
-      setInviteEmail("");
+  const tools = [
+    { id: "select", icon: FiMousePointer, label: "Select", shortcut: "V" },
+    { id: "hand", icon: FiMove, label: "Pan", shortcut: "H" },
+    { id: "rectangle", icon: FiSquare, label: "Rect", shortcut: "R" },
+    { id: "circle", icon: FiCircle, label: "Circle", shortcut: "O" },
+    { id: "arrow", icon: FiArrowRight, label: "Arrow", shortcut: "A" },
+    { id: "line", icon: FiMinus, label: "Line", shortcut: "L" },
+    { id: "draw", icon: FiEdit3, label: "Draw", shortcut: "P" },
+    { id: "text", icon: FiType, label: "Text", shortcut: "T" },
+    { id: "sticky", icon: FiFileText, label: "Sticky", shortcut: "S" }
+  ];
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editingTextId || chatInput) return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        e.preventDefault();
+        handleDuplicate();
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedElementId) {
+          e.preventDefault();
+          handleDelete();
+        }
+      }
+      if (e.key === "?") {
+        setShowShortcuts(true);
+      }
+      if (e.key === "Escape") {
+        setSelectedElementId(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [editingTextId, selectedElementId, history, historyStep, chatInput]);
+
+  const getBackgroundPattern = () => {
+    switch (bgPattern) {
+      case "grid":
+        return {
+          backgroundImage:
+            `linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),` +
+            ` linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)`,
+          backgroundSize: "20px 20px"
+        };
+      case "dots":
+        return {
+          backgroundImage:
+            `radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+          backgroundSize: "20px 20px"
+        };
+      case "lines":
+        return {
+          backgroundImage:
+            `linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)`,
+          backgroundSize: "20px 20px"
+        };
+      default:
+        return {};
     }
   };
 
-  const handleRemoveInvitee = (email: string) => {
-    setInvitees(invitees.filter(e => e !== email));
-  };
-
-  const shareLink = `https://collabboard.app/board/${slug || "untitled"}`;
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareLink);
-    setCopySuccess("Copied!");
-    setTimeout(() => setCopySuccess(""), 2000);
-  };
+  const themeColors =
+    theme === "dark"
+      ? { bg: "#0c0c0f", card: "#141418", text: "text-gray-200", border: "border-white/10" }
+      : { bg: "#f5f5f5", card: "#ffffff", text: "text-gray-800", border: "border-gray-300" };
 
   return (
-    <div className="h-screen bg-[#0c0c0f] text-gray-200 flex flex-col overflow-hidden">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#0f0f12]/95 backdrop-blur-xl z-50">
+    <div
+      className={`h-screen ${theme === "dark" ? "bg-[#0c0c0f]" : "bg-gray-100"} ${themeColors.text} flex flex-col overflow-hidden relative`}
+      style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+    >
+      {/* Video Call Overlay */}
+      {showVideoCall && (
+        <div
+          className={`absolute top-20 right-4 z-[60] flex flex-col gap-2 p-3 bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl max-h-[80vh] overflow-y-auto w-64`}
+        >
+          <div className={`flex justify-between items-center pb-2 border-b ${themeColors.border}`}>
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiVideo className="text-indigo-500" />
+              Video Call
+            </h3>
+            <button
+              onClick={() => setShowVideoCall(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden border border-white/10">
+            <video
+              ref={el => {
+                if (el) el.srcObject = localVideoStreamRef.current;
+              }}
+              autoPlay
+              muted
+              playsInline
+              className="w-full h-full object-cover transform scale-x-[-1]"
+            />
+            <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-1 rounded">
+              You
+            </span>
+          </div>
+
+          {remoteVideoStreams.map((s) => (
+            <div
+              key={s.clientId}
+              className="relative w-full aspect-video bg-black rounded-lg overflow-hidden border border-white/10"
+            >
+              <video
+                ref={el => {
+                  if (el) el.srcObject = s.stream;
+                }}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-1 rounded">
+                {s.username}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Header */}
+      <header
+        className={`flex items-center justify-between px-4 py-3 border-b ${themeColors.border} bg-[${themeColors.card}]/95 backdrop-blur-xl z-50`}
+      >
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="p-2 rounded-lg hover:bg-white/5 transition">
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+          <Link href="/workspace">
+            <button className="p-2 rounded-lg hover:bg-white/5 transition">
+              <FiArrowLeft className="w-5 h-5 text-gray-400" />
+            </button>
           </Link>
+
           <div className="flex items-center gap-2">
-            <input type="text" defaultValue={slug || "Untitled Board"} className="bg-transparent text-lg font-semibold text-white border-none outline-none focus:bg-white/5 px-2 py-1 rounded" />
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span>Auto-saved</span>
+            <img
+              src={currentUser.avatar}
+              alt=""
+              className="w-8 h-8 rounded-full border-2 border-indigo-500"
+            />
+            <div>
+              <span className={`text-lg font-semibold ${themeColors.text}`}>
+                {slug || "Untitled Board"}
+              </span>
+              <div className="flex items-center gap-1">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    currentUser.status === "online"
+                      ? "bg-emerald-500"
+                      : currentUser.status === "busy"
+                      ? "bg-red-500"
+                      : "bg-yellow-500"
+                  }`}
+                />
+                <span className="text-xs text-gray-400 capitalize">
+                  {currentUser.role}
+                </span>
+              </div>
             </div>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
-          <div className="flex items-center -space-x-2 mr-2">
-            {activePeople.map((person, index) => (
-              <div key={index} className="relative group" title={person.name}>
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${person.color} flex items-center justify-center text-xs font-bold border-2 border-[#0c0c0f] cursor-pointer hover:scale-110 transition-transform`}>
-                  {person.avatar}
-                </div>
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#0c0c0f] bg-emerald-500"></span>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => setShowVideoCall(!showVideoCall)} title="Video Call" className="p-2 rounded-lg hover:bg-white/5 transition">🎥</button>
-          <button onClick={() => setShowChat(!showChat)} title="Chat" className="p-2 rounded-lg hover:bg-white/5 transition">💬</button>
-          <button onClick={() => setShowBreakoutRooms(!showBreakoutRooms)} title="Breakout Rooms" className="p-2 rounded-lg hover:bg-white/5 transition">🔀</button>
-          <button onClick={() => setShowPolls(!showPolls)} title="Polls" className="p-2 rounded-lg hover:bg-white/5 transition">📊</button>
-          <button onClick={() => setShowTaskManager(!showTaskManager)} title="Tasks" className="p-2 rounded-lg hover:bg-white/5 transition">🗂️</button>
-          <button onClick={() => setShowShareModal(true)} className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white font-semibold shadow-lg shadow-indigo-500/30 transition-all text-sm flex items-center gap-2">
+          {/* Theme Toggle */}
+          <button
+            onClick={() => setTheme(t => (t === "dark" ? "light" : "dark"))}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white"
+            title="Toggle Theme"
+          >
+            {theme === "dark" ? <FiMoon size={18} /> : <FiSun size={18} />}
+          </button>
+
+          {/* Notifications */}
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white relative"
+            title="Notifications"
+          >
+            <FiBell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] flex items-center justify-center font-bold text-white">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Activity Feed */}
+          <button
+            onClick={() => setShowActivityFeed(!showActivityFeed)}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white"
+            title="Activity Feed"
+          >
+            <FiActivity size={18} />
+          </button>
+
+          {/* Chat */}
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white"
+            title="Chat"
+          >
+            <FiMessageCircle size={18} />
+          </button>
+
+          {/* Timeline */}
+          <button
+            onClick={() => setShowTimeline(!showTimeline)}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white"
+            title="Timeline"
+          >
+            <FiClock size={18} />
+          </button>
+
+          <button
+            onClick={toggleMic}
+            className={`p-2 rounded-lg transition ${
+              isMicOn ? "bg-green-500/20 text-green-400" : "hover:bg-white/10 text-gray-400"
+            }`}
+            title="Voice"
+          >
+            {isMicOn ? <FiMic size={18} /> : <FiMicOff size={18} />}
+          </button>
+
+          <button
+            onClick={toggleVideo}
+            className={`p-2 rounded-lg transition ${
+              isVideoOn ? "bg-red-500/20 text-red-500" : "hover:bg-white/10 text-gray-400"
+            }`}
+            title="Video"
+          >
+            {isVideoOn ? <FiVideo size={18} /> : <FiVideoOff size={18} />}
+          </button>
+
+          <button
+            onClick={() => setShowParticipants(!showParticipants)}
+            className="p-2 rounded-lg hover:bg-white/10 transition text-gray-400 hover:text-white relative"
+            title="Participants"
+          >
+            <FiUsers size={18} />
+            {remoteCursors.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-500 rounded-full text-[10px] flex items-center justify-center font-bold">
+                {remoteCursors.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-sm transition flex items-center gap-2"
+          >
+            <FiUserPlus size={16} />
+            Invite
+          </button>
+
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white font-semibold text-sm shadow-lg shadow-indigo-500/20 transition flex items-center gap-2"
+          >
+            <FiShare2 size={16} />
             Share
           </button>
         </div>
       </header>
 
-      {showVideoCall && (
-        <div className="fixed bottom-16 right-4 z-50 w-64 h-48 bg-[#141418] border border-white/20 rounded-lg shadow-lg p-2 text-white">
-          <h4 className="text-sm font-semibold mb-2">Video Call (Placeholder)</h4>
-          <div className="flex-1 bg-black rounded-md flex items-center justify-center text-gray-500 text-xs h-32">Video feed here</div>
-          <button onClick={() => setShowVideoCall(false)} className="mt-2 w-full bg-red-600 rounded py-1 text-center text-white text-xs hover:bg-red-700 transition">End Call</button>
-        </div>
-      )}
-
+      {/* Chat Panel */}
       {showChat && (
-        <div className="fixed bottom-16 right-72 z-50 w-80 h-96 bg-[#141418] border border-white/20 rounded-lg shadow-lg p-4 overflow-auto flex flex-col text-white">
-          <h4 className="text-sm font-semibold mb-2">Chat (Placeholder)</h4>
-          <div className="flex-1 overflow-y-auto mb-2 text-gray-400">Chat messages here...</div>
-          <input type="text" placeholder="Type a message..." className="w-full rounded px-2 py-1 text-black" />
-        </div>
-      )}
+        <div
+          className={`absolute top-20 right-4 z-[60] w-80 h-[500px] bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl flex flex-col`}
+        >
+          <div className={`flex justify-between items-center p-4 border-b ${themeColors.border}`}>
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiMessageCircle className="text-indigo-500" />
+              Chat
+            </h3>
+            <button
+              onClick={() => setShowChat(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
 
-      {showBreakoutRooms && (
-        <div className="fixed bottom-72 right-4 z-50 w-80 h-48 bg-[#141418] border border-white/20 rounded-lg shadow-lg p-4 text-white">
-          <h4 className="mb-2 font-semibold">Breakout Rooms (Placeholder)</h4>
-          <div className="text-gray-400">List and join breakout rooms here...</div>
-          <button onClick={() => setShowBreakoutRooms(false)} className="mt-2 bg-indigo-600 rounded py-1 w-full hover:bg-indigo-700 transition">Close</button>
-        </div>
-      )}
-
-      {showPolls && (
-        <div className="fixed bottom-72 right-96 z-50 w-64 h-40 bg-[#141418] border border-white/20 rounded-lg shadow-lg p-4 text-white">
-          <h4 className="mb-2 font-semibold">Polls (Placeholder)</h4>
-          <div className="text-gray-400">Active polls and voting here...</div>
-          <button onClick={() => setShowPolls(false)} className="mt-2 bg-indigo-600 rounded py-1 w-full hover:bg-indigo-700 transition">Close</button>
-        </div>
-      )}
-
-      {showTaskManager && (
-        <div className="fixed bottom-72 left-4 z-50 w-80 h-56 bg-[#141418] border border-white/20 rounded-lg shadow-lg p-4 text-white overflow-auto">
-          <h4 className="mb-2 font-semibold">Task Manager (Placeholder)</h4>
-          <div className="text-gray-400">Shared tasks and to-dos here...</div>
-          <button onClick={() => setShowTaskManager(false)} className="mt-2 bg-indigo-600 rounded py-1 w-full hover:bg-indigo-700 transition">Close</button>
-        </div>
-      )}
-
-      {showShareModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#141418] rounded-xl max-w-md w-full p-6 space-y-6">
-            <h2 className="text-xl font-semibold text-white">Share your Whiteboard</h2>
-            <div>
-              <label className="block text-gray-400 mb-2">Shareable Link</label>
-              <div className="flex gap-2">
-                <input readOnly type="text" value={shareLink} className="flex-1 rounded bg-[#0c0c0f] border border-white/10 text-sm text-gray-300 px-3 py-2" />
-                <button onClick={handleCopyLink} className="px-3 py-2 bg-indigo-600 rounded text-sm text-white hover:bg-indigo-700 transition">
-                  {copySuccess || "Copy"}
-                </button>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {chatMessages.map((msg) => (
+              <div key={msg.id} className="flex items-start gap-2">
+                <img
+                  src={msg.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`font-semibold text-sm ${themeColors.text}`}>
+                      {msg.username}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <p className={`text-sm ${themeColors.text} break-words`}>
+                    {msg.message}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="block text-gray-400 mb-2">Invite by Email</label>
-              <div className="flex gap-3">
-                <input type="email" placeholder="email@example.com" className="flex-1 rounded bg-[#0c0c0f] border border-white/10 text-sm text-gray-300 px-3 py-2" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAddInvitee()} />
-                <button onClick={handleAddInvitee} className="px-4 py-2 bg-indigo-600 rounded text-sm text-white hover:bg-indigo-700 transition">Add</button>
+            ))}
+            {typingUsers.length > 0 && (
+              <div className="text-xs text-gray-400 italic flex items-center gap-1">
+                <span className="inline-block w-2 h-2 bg-gray-400 rounded-full animate-pulse" />
+                {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
               </div>
-              <ul className="mt-3 max-h-40 overflow-auto text-gray-300 text-sm">
-                {invitees.map(email => (
-                  <li key={email} className="flex justify-between items-center mb-1">
-                    <span>{email}</span>
-                    <button onClick={() => handleRemoveInvitee(email)} className="text-red-500 hover:text-red-400">&times;</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex justify-end gap-4">
-              <button onClick={() => setShowShareModal(false)} className="px-4 py-2 rounded bg-white/10 text-white hover:bg-white/20 transition">Close</button>
-              <button disabled={invitees.length === 0} onClick={() => { alert("Invites sent!"); setShowShareModal(false); }} className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-50">Send Invites</button>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <div className={`p-4 border-t ${themeColors.border}`}>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => handleChatTyping(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendChatMessage()}
+                placeholder="Type a message..."
+                className={`flex-1 rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+              />
+              <button
+                onClick={sendChatMessage}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-semibold transition flex items-center gap-2"
+              >
+                <FiSend size={16} />
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Activity Feed */}
+      {showActivityFeed && (
+        <div
+          className={`absolute top-20 left-4 z-[60] w-80 max-h-[500px] bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl overflow-hidden flex flex-col`}
+        >
+          <div className={`flex justify-between items-center p-4 border-b ${themeColors.border}`}>
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiActivity className="text-indigo-500" />
+              Activity Feed
+            </h3>
+            <button
+              onClick={() => setShowActivityFeed(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {activities.map((activity) => (
+              <div
+                key={activity.id}
+                className="flex items-start gap-2 p-2 rounded-lg hover:bg-white/5 transition"
+              >
+                <img
+                  src={activity.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm ${themeColors.text}`}>
+                    <span className="font-semibold">{activity.username}</span>{" "}
+                    {activity.action}{" "}
+                    <span className="text-gray-400">{activity.details}</span>
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {new Date(activity.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <span className="text-xs flex-shrink-0">
+                  {activity.type === "create" && <FiPlus className="text-green-500" />}
+                  {activity.type === "update" && <FiEdit3 className="text-blue-500" />}
+                  {activity.type === "delete" && <FiTrash2 className="text-red-500" />}
+                  {activity.type === "invite" && <FiMail className="text-purple-500" />}
+                  {activity.type === "join" && <FiUsers className="text-indigo-500" />}
+                  {activity.type === "comment" && <FiMessageSquare className="text-yellow-500" />}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Panel */}
+      {showNotifications && (
+        <div
+          className={`absolute top-20 right-80 z-[60] w-80 max-h-[400px] bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl overflow-hidden flex flex-col`}
+        >
+          <div className={`flex justify-between items-center p-4 border-b ${themeColors.border}`}>
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiBell className="text-indigo-500" />
+              Notifications
+            </h3>
+            <button
+              onClick={() => {
+                setShowNotifications(false);
+                setUnreadCount(0);
+                setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+              }}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {notifications.map((notif) => (
+              <div
+                key={notif.id}
+                className={`p-3 rounded-lg ${
+                  !notif.read
+                    ? "bg-indigo-500/10 border border-indigo-500/30"
+                    : "bg-white/5"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm">
+                    {notif.type === "mention" && <FiMessageCircle className="text-blue-400" />}
+                    {notif.type === "comment" && <FiMessageSquare className="text-yellow-400" />}
+                    {notif.type === "update" && <FiEdit3 className="text-green-400" />}
+                    {notif.type === "invite" && <FiMail className="text-purple-400" />}
+                  </span>
+                  <p className={`text-sm flex-1 ${themeColors.text}`}>{notif.message}</p>
+                </div>
+                <span className="text-xs text-gray-400">
+                  {new Date(notif.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      {showTimeline && (
+        <div
+          className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-4xl w-full bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl p-4`}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiClock className="text-indigo-500" />
+              Timeline View
+            </h3>
+            <button
+              onClick={() => setShowTimeline(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <div className="relative">
+            <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-indigo-500" />
+            <div className="space-y-4 pl-8">
+              {activities.slice(0, 10).map((activity) => (
+                <div key={activity.id} className="relative">
+                  <div
+                    className={`absolute -left-8 w-4 h-4 rounded-full bg-indigo-500 border-4 border-[${themeColors.card}]`}
+                  />
+                  <div className="p-3 rounded-lg bg-white/5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <img
+                        src={activity.avatar}
+                        alt=""
+                        className="w-6 h-6 rounded-full"
+                      />
+                      <span className={`font-semibold text-sm ${themeColors.text}`}>
+                        {activity.username}
+                      </span>
+                      <span className={`text-sm ${themeColors.text}`}>
+                        {activity.action}
+                      </span>
+                      <span className="text-sm text-gray-400">
+                        {activity.details}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Modal */}
+      {showInviteModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100]"
+          onClick={() => setShowInviteModal(false)}
+        >
+          <div
+            className={`bg-[${themeColors.card}] rounded-xl max-w-md w-full p-6 space-y-6 border ${themeColors.border}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              className={`text-xl font-semibold ${themeColors.text} flex items-center gap-2`}
+            >
+              <FiUserPlus className="text-indigo-500" />
+              Invite User to Board
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label
+                  className={`block text-sm font-medium ${themeColors.text} mb-2`}
+                >
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleInviteUser()}
+                  placeholder="user@example.com"
+                  className={`w-full rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-4 py-3 focus:outline-nonefocus:ring-2 focus:ring-indigo-500`}
+                />
+              </div>
+
+              {inviteStatus && (
+                <div
+                  className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+                    inviteStatus.includes("✓")
+                      ? "bg-green-500/10 text-green-400 border border-green-500/30"
+                      : "bg-red-500/10 text-red-400 border border-red-500/30"
+                  }`}
+                >
+                  {inviteStatus.includes("✓") ? <FiCheckCircle /> : <FiAlertCircle />}
+                  {inviteStatus}
+                </div>
+              )}
+
+              {invitedUsers.length > 0 && (
+                <div>
+                  <p
+                    className={`text-sm font-medium ${themeColors.text} mb-2`}
+                  >
+                    Invited Users:
+                  </p>
+                  <div className="space-y-1">
+                    {invitedUsers.map((email, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-2 p-2 rounded-lg bg-white/5 text-sm ${themeColors.text}`}
+                      >
+                        <FiMail className="text-indigo-400" />
+                        <span>{email}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowInviteModal(false)}
+                className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleInviteUser}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white font-semibold transition flex items-center gap-2"
+              >
+                <FiSend size={16} />
+                Send Invite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100]"
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className={`bg-[${themeColors.card}] rounded-xl max-w-md w-full p-6 space-y-6 border ${themeColors.border}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              className={`text-xl font-semibold ${themeColors.text} flex items-center gap-2`}
+            >
+              <FiShare2 className="text-indigo-500" />
+              Share Board
+            </h2>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                type="text"
+                value={shareUrl}
+                className={`flex-1 rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopySuccess("Copied!");
+                  setTimeout(() => setCopySuccess(""), 2000);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white font-semibold transition flex items-center gap-2"
+              >
+                <FiCopy size={16} />
+                {copySuccess || "Copy"}
+              </button>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shortcuts Modal */}
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100]"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className={`bg-[${themeColors.card}] rounded-xl max-w-md w-full p-6 space-y-4 border ${themeColors.border}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              className={`text-xl font-semibold ${themeColors.text} mb-4 flex items-center gap-2`}
+            >
+              <FiHelpCircle className="text-indigo-500" />
+              Keyboard Shortcuts
+            </h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Undo</span>
+                <kbd className="bg-white/10 px-2 py-1 rounded text-xs">
+                  Ctrl/Cmd + Z
+                </kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Redo</span>
+                <kbd className="bg-white/10 px-2 py-1 rounded text-xs">
+                  Ctrl/Cmd + Y
+                </kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Duplicate</span>
+                <kbd className="bg-white/10 px-2 py-1 rounded text-xs">
+                  Ctrl/Cmd + D
+                </kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Delete</span>
+                <kbd className="bg-white/10 px-2 py-1 rounded text-xs">
+                  Delete/Backspace
+                </kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Deselect</span>
+                <kbd className="bg-white/10 px-2 py-1 rounded text-xs">
+                  Esc
+                </kbd>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShortcuts(false)}
+              className="w-full mt-4 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Participants Panel */}
+      {showParticipants && (
+        <div
+          className={`absolute top-20 right-4 z-[60] w-64 bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl p-4`}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiUsers className="text-indigo-500" />
+              Participants ({remoteCursors.length + 1})
+            </h3>
+            <button
+              onClick={() => setShowParticipants(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
+              <img
+                src={currentUser.avatar}
+                alt=""
+                className="w-8 h-8 rounded-full"
+              />
+              <div className="flex-1">
+                <span className={`text-sm font-semibold ${themeColors.text}`}>
+                  You (Host)
+                </span>
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="text-xs text-gray-400 capitalize">
+                    {currentUser.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {remoteCursors.map((cursor) => (
+              <div
+                key={cursor.clientId}
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 transition"
+              >
+                <img
+                  src={cursor.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full"
+                  style={{ borderColor: cursor.color, borderWidth: 2 }}
+                />
+                <div className="flex-1">
+                  <span className={`text-sm ${themeColors.text}`}>
+                    {cursor.username}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <div
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor:
+                          cursor.status === "online"
+                            ? "#10b981"
+                            : cursor.status === "busy"
+                            ? "#ef4444"
+                            : "#f59e0b"
+                      }}
+                    />
+                    <span className="text-xs text-gray-400 capitalize">
+                      {cursor.status}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      • {cursor.role}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Layers Panel */}
+      {showLayers && (
+        <div
+          className={`absolute bottom-20 right-4 z-[60] w-64 max-h-96 overflow-y-auto bg-[${themeColors.card}]/95 backdrop-blur-md border ${themeColors.border} rounded-xl shadow-2xl p-4`}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <FiLayers className="text-indigo-500" />
+              Layers ({elements.length})
+            </h3>
+            <button
+              onClick={() => setShowLayers(false)}
+              className="text-gray-400 hover:text-white transition"
+            >
+              <FiX />
+            </button>
+          </div>
+          <div className="space-y-1">
+            {elements
+              .slice()
+              .reverse()
+              .map((el) => {
+                const Tool = tools.find(t => t.id === el.type)?.icon || FiSquare;
+                return (
+                  <div
+                    key={el.id}
+                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
+                      selectedElementId === el.id
+                        ? "bg-indigo-500/20 border border-indigo-500"
+                        : "hover:bg-white/5"
+                    }`}
+                    onClick={() => setSelectedElementId(el.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Tool size={16} />
+                      <span
+                        className={`text-xs ${themeColors.text} capitalize`}
+                      >
+                        {el.type}
+                      </span>
+                    </div>
+                    {el.locked && (
+                      <FiLock size={12} className="text-gray-400" />
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Text Editor */}
       {editingTextId && (
         <textarea
           autoFocus
@@ -721,130 +2156,367 @@ export default function WhiteboardPage({ params }: Props) {
             position: "fixed",
             left: textInputPos.x,
             top: textInputPos.y,
-            fontSize: `${strokeWidth * 8}px`,
+            fontSize: `${strokeWidth * 8 + 10}px`,
             color: strokeColor,
-            background: "rgba(0,0,0,0.8)",
-            border: "2px solid #4299e1",
-            outline: "none",
-            padding: "8px",
-            fontFamily: "Arial",
-            resize: "none",
-            zIndex: 1000,
-            minWidth: "200px",
-            minHeight: "40px",
+            zIndex: 1000
           }}
-          className="rounded"
+          className={`rounded-lg p-2 outline-none resize-none bg-[${themeColors.bg}]/90 backdrop-blur-sm border border-indigo-500 shadow-lg`}
         />
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-16 border-r border-white/10 bg-[#0f0f12]/50 flex flex-col items-center py-4 gap-1">
-          {tools.map(tool => (
-            <button key={tool.id} onClick={() => setSelectedTool(tool.id)} className={`w-12 h-12 rounded-lg flex items-center justify-center text-xl transition-all ${selectedTool === tool.id ? "bg-indigo-600 shadow-lg shadow-indigo-500/30" : "hover:bg-white/5"}`} title={`${tool.label} (${tool.shortcut})`}>
-              {tool.icon}
-            </button>
-          ))}
-          <div className="h-px w-10 bg-white/10 my-2"></div>
-          <button onClick={handleClear} className="w-12 h-12 rounded-lg hover:bg-white/5 flex items-center justify-center transition-all" title="Clear Canvas">
-            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+        {/* Toolbar */}
+        <aside
+          className={`w-16 border-r ${themeColors.border} bg-[${themeColors.card}]/50 flex flex-col items-center py-4 gap-2`}
+        >
+          {tools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.id}
+                onClick={() => setSelectedTool(tool.id)}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
+                  selectedTool === tool.id
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                    : "text-gray-400 hover:bg-white/5 hover:text-white"
+                }`}
+                title={`${tool.label} (${tool.shortcut})`}
+              >
+                <Icon size={18} />
+              </button>
+            );
+          })}
+
+          <div className="h-px w-8 bg-white/10 my-2" />
+
+          <button
+            onClick={handleClear}
+            className="w-10 h-10 rounded-lg hover:bg-red-500/20 flex items-center justify-center text-gray-400 hover:text-red-400 transition"
+            title="Clear"
+          >
+            <FiTrash2 size={18} />
+          </button>
+
+          <button
+            onClick={() => setShowShortcuts(true)}
+            className="w-10 h-10 rounded-lg hover:bg-white/5 flex items-center justify-center text-gray-400 hover:text-white transition"
+            title="Shortcuts (?)"
+          >
+            <FiHelpCircle size={18} />
           </button>
         </aside>
 
         <main className="flex-1 relative overflow-hidden">
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-[#141418] border border-white/10 rounded-xl p-2 shadow-xl backdrop-blur-xl">
-            <div className="flex items-center gap-2 px-3 border-r border-white/10">
-              <span className="text-xs text-gray-400">Stroke</span>
-              <input type="color" value={strokeColor} onChange={e => setStrokeColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
-              <div className="flex gap-1">
-                {colors.slice(0, 5).map(color => (
-                  <button key={color} onClick={() => setStrokeColor(color)} className="w-6 h-6 rounded border-2 border-white/20 hover:scale-110 transition-transform" style={{ backgroundColor: color }} />
-                ))}
+          {/* Top Controls */}
+          <div
+            className={`absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-xl p-2 shadow-xl`}
+          >
+            <input
+              type="color"
+              value={strokeColor}
+              onChange={e => setStrokeColor(e.target.value)}
+              className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+              title="Stroke Color"
+            />
+
+            <input
+              type="color"
+              value={fillColor === "transparent" ? "#000000" : fillColor}
+              onChange={e => setFillColor(e.target.value)}
+              className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+              title="Fill Color"
+            />
+
+            <button
+              onClick={() => setFillColor("transparent")}
+              className={`w-6 h-6 rounded border transition ${
+                fillColor === "transparent"
+                  ? "border-red-500 bg-red-500/20"
+                  : "border-gray-500 hover:border-red-500"
+              }`}
+              title="No Fill"
+            >
+              <FiX size={12} className="mx-auto" />
+            </button>
+
+            <div className="w-px h-6 bg-white/10 mx-1" />
+
+            {[1, 2, 4, 8].map(w => (
+              <button
+                key={w}
+                onClick={() => setStrokeWidth(w)}
+                className={`w-8 h-8 rounded flex items-center justify-center transition ${
+                  strokeWidth === w ? "bg-indigo-600" : "hover:bg-white/5"
+                }`}
+                title={`Stroke Width: ${w}px`}
+              >
+                <div
+                  className="bg-white rounded-full"
+                  style={{ width: w * 1.5, height: w * 1.5 }}
+                />
+              </button>
+            ))}
+
+            <div className="w-px h-6 bg-white/10 mx-1" />
+
+            <button
+              onClick={handleUndo}
+              disabled={historyStep <= 0}
+              className="p-2 text-gray-400 hover:text-white disabled:opacity-30 transition"
+              title="Undo"
+            >
+              <FiRotateCcw size={18} />
+            </button>
+
+            <button
+              onClick={handleRedo}
+              disabled={historyStep >= history.length - 1}
+              className="p-2 text-gray-400 hover:text-white disabled:opacity-30 transition"
+              title="Redo"
+            >
+              <FiRotateCw size={18} />
+            </button>
+          </div>
+
+          {/* Canvas */}
+          <div className="w-full h-full relative" style={getBackgroundPattern()}>
+            <canvas
+              ref={canvasRef}
+              className="w-full h-full cursor-crosshair"
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            />
+          </div>
+
+          {/* Selected Element Actions */}
+          {selectedElementId && (
+            <div
+              className={`absolute top-4 right-4 z-10 flex gap-1 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-xl p-1 shadow-xl`}
+            >
+              <button
+                onClick={() => setShowCommentFor(selectedElementId)}
+                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition"
+                title="Comment"
+              >
+                <FiMessageSquare size={18} />
+              </button>
+
+              <button
+                onClick={() => addReaction(selectedElementId, "👍")}
+                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition"
+                title="Like"
+              >
+                <FiThumbsUp size={18} />
+              </button>
+
+              <button
+                onClick={handleDuplicate}
+                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition"
+                title="Duplicate"
+              >
+                <FiCopy size={18} />
+              </button>
+
+              <button
+                onClick={handleLockElement}
+                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition"
+                title={
+                  elements.find(e => e.id === selectedElementId)?.locked
+                    ? "Unlock"
+                    : "Lock"
+                }
+              >
+                {elements.find(e => e.id === selectedElementId)?.locked ? (
+                  <FiUnlock size={18} />
+                ) : (
+                  <FiLock size={18} />
+                )}
+              </button>
+
+              <button
+                onClick={handleDelete}
+                className="p-2 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition"
+                title="Delete"
+              >
+                <FiTrash2 size={18} />
+              </button>
+            </div>
+          )}
+
+          {/* Comment Input */}
+          {showCommentFor && (
+            <div
+              className={`absolute top-20 right-4 z-10 w-64 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-xl p-4 shadow-xl`}
+            >
+              <h3
+                className={`font-bold text-sm ${themeColors.text} mb-2 flex items-center gap-2`}
+              >
+                <FiMessageSquare className="text-indigo-500" />
+                Add Comment
+              </h3>
+
+              {/* Show existing comments */}
+              <div className="mb-3 max-h-32 overflow-y-auto space-y-2">
+                {elements
+                  .find(e => e.id === showCommentFor)
+                  ?.comments?.map((comment) => (
+                    <div
+                      key={comment.id}
+                      className="text-xs p-2 rounded-lg bg-white/5"
+                    >
+                      <div className="flex items-center gap-1 mb-1">
+                        <img
+                          src={comment.avatar}
+                          alt=""
+                          className="w-4 h-4 rounded-full"
+                        />
+                        <span className="font-semibold">
+                          {comment.username}
+                        </span>
+                      </div>
+                      <p className={`text-xs ${themeColors.text}`}>
+                        {comment.text}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+
+              <textarea
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                placeholder="Add your comment..."
+                className={`w-full rounded-lg bg-[${themeColors.bg}] border ${themeColors.border} text-sm ${themeColors.text} px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none`}
+                rows={3}
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={addComment}
+                  className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs text-white font-semibold transition flex items-center justify-center gap-1"
+                >
+                  <FiSend size={12} />
+                  Comment
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCommentFor(null);
+                    setCommentInput("");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 px-3 border-r border-white/10">
-              <span className="text-xs text-gray-400">Fill</span>
-              <input type="color" value={fillColor === "transparent" ? "#000000" : fillColor} onChange={e => setFillColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
-              <button onClick={() => setFillColor("transparent")} className={`w-6 h-6 rounded border-2 hover:scale-110 transition-transform ${fillColor === "transparent" ? "border-indigo-500" : "border-white/20"}`} style={{ background: "linear-gradient(45deg, transparent 47%, red 47%, red 53%, transparent 53%)" }} />
-            </div>
-            <div className="flex items-center gap-2 px-3 border-r border-white/10">
-              <span className="text-xs text-gray-400">Width</span>
-              <div className="flex gap-1">
-                {[1, 2, 4, 8].map(width => (
-                  <button key={width} onClick={() => setStrokeWidth(width)} className={`w-8 h-8 rounded flex items-center justify-center ${strokeWidth === width ? "bg-indigo-600" : "hover:bg-white/5"}`}>
-                    <div className="bg-white rounded-full" style={{ width: width * 2, height: width * 2 }} />
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-1 px-2">
-              <button onClick={handleUndo} disabled={historyStep <= 0} className="p-2 rounded hover:bg-white/5 transition disabled:opacity-30" title="Undo">
-                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
+          )}
+
+          {/* Bottom Controls (left) */}
+          <div className="absolute bottom-4 left-4 z-10 flex gap-2">
+            <div
+              className={`flex items-center gap-1 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-lg p-1`}
+            >
+              <button
+                onClick={handleZoomOut}
+                className="p-1.5 text-gray-400 hover:text-white transition"
+                title="Zoom Out"
+              >
+                <FiZoomOut size={16} />
               </button>
-              <button onClick={handleRedo} disabled={historyStep >= history.length - 1} className="p-2 rounded hover:bg-white/5 transition disabled:opacity-30" title="Redo">
-                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 16h-10a8 8 0 01-8-8V6m18 10l-6-6m6 6l-6 6" />
-                </svg>
+              <span
+                className={`text-xs w-12 text-center ${themeColors.text} font-semibold`}
+              >
+                {zoom}%
+              </span>
+              <button
+                onClick={handleZoomIn}
+                className="p-1.5 text-gray-400 hover:text-white transition"
+                title="Zoom In"
+              >
+                <FiZoomIn size={16} />
               </button>
             </div>
+
+            <button
+              onClick={() =>
+                setBgPattern(p =>
+                  p === "grid"
+                    ? "dots"
+                    : p === "dots"
+                    ? "lines"
+                    : p === "lines"
+                    ? "none"
+                    : "grid"
+                )
+              }
+              className={`px-3 py-1.5 rounded-lg border bg-[${themeColors.card}]/95 backdrop-blur-xl ${themeColors.border} text-xs ${themeColors.text} hover:text-white capitalize transition flex items-center gap-1`}
+              title="Change Background Pattern"
+            >
+              <FiGrid size={14} />
+              {bgPattern}
+            </button>
+
+            <button
+              onClick={() => setGridSnap(!gridSnap)}
+              className={`px-3 py-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${
+                gridSnap
+                  ? "bg-indigo-600 border-indigo-500 text-white"
+                  : `bg-[${themeColors.card}]/95 backdrop-blur-xl ${themeColors.border} ${themeColors.text} hover:text-white`
+              }`}
+              title="Grid Snap"
+            >
+              <FiMaximize2 size={14} />
+              Snap
+            </button>
           </div>
 
-          <div className="w-full h-full relative" style={{ backgroundImage: showGrid ? `linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)` : "none", backgroundSize: "20px 20px" }}>
-            <canvas ref={canvasRef} className="w-full h-full cursor-crosshair" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onWheel={handleWheel} />
-          </div>
+          {/* Bottom Controls (right) */}
+          <div className="absolute bottom-4 right-4 z-10 flex gap-2">
+            <button
+              onClick={() => setShowLayers(!showLayers)}
+              className={`px-3 py-1.5 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-lg text-xs ${themeColors.text} hover:text-white transition flex items-center gap-1`}
+              title="Layers"
+            >
+              <FiLayers size={14} />
+              Layers
+            </button>
 
-          <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-[#141418] border border-white/10 rounded-lg p-1">
-              <button onClick={handleZoomOut} className="p-2 rounded hover:bg-white/5 transition" title="Zoom Out">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                </svg>
-              </button>
-              <button onClick={handleResetZoom} className="px-3 py-1 text-sm text-gray-300 hover:text-white transition min-w-[60px]" title="Reset Zoom">{zoom}%</button>
-              <button onClick={handleZoomIn} className="p-2 rounded hover:bg-white/5 transition" title="Zoom In">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                </svg>
-              </button>
-            </div>
-            <button onClick={() => setShowGrid(!showGrid)} className={`px-3 py-2 rounded-lg border text-sm transition-all ${showGrid ? "bg-indigo-600 border-indigo-500 text-white" : "bg-[#141418] border-white/10 text-gray-400"}`} title="Toggle Grid">Grid</button>
-            <div className="text-xs text-gray-500 bg-[#141418] border border-white/10 rounded-lg px-3 py-2">Elements: {elements.length}</div>
-          </div>
-
-          <div className="absolute bottom-4 right-4 z-10">
-            <button onClick={handleExport} className="px-4 py-2 rounded-lg bg-[#141418] border border-white/10 text-sm text-gray-300 hover:text-white hover:border-indigo-500/50 transition-all flex items-center gap-2" title="Export PNG">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export PNG
+            <button
+              onClick={handleExport}
+              className={`px-3 py-1.5 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-lg text-xs ${themeColors.text} hover:text-white transition flex items-center gap-1`}
+              title="Export as PNG"
+            >
+              <FiDownload size={14} />
+              Export
             </button>
           </div>
         </main>
+      </div>
 
-        {showProperties && (
-          <aside className="w-64 border-l border-white/10 bg-[#0f0f12]/50 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-white">Tools Info</h3>
-              <button onClick={() => setShowProperties(false)} className="p-1 rounded hover:bg-white/5">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="space-y-3 text-xs text-gray-400">
-              <p><strong className="text-white">Selected:</strong> {selectedTool}</p>
-              <p><strong className="text-white">Stroke:</strong> {strokeColor}</p>
-              <p><strong className="text-white">Width:</strong> {strokeWidth}px</p>
-              <p><strong className="text-white">Zoom:</strong> {zoom}%</p>
-              <div className="pt-3 border-t border-white/10">
-                <p className="text-xs text-gray-500">Click shapes to select and resize. Double-click text to edit inline. Use scroll wheel to zoom.</p>
-              </div>
-            </div>
-          </aside>
-        )}
+      {/* Stats Badge */}
+      <div
+        className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-4 bg-[${themeColors.card}]/95 backdrop-blur-xl border ${themeColors.border} rounded-lg px-4 py-2 text-xs ${themeColors.text} shadow-lg`}
+      >
+        <span className="flex items-center gap-1">
+          <FiUsers size={14} className="text-indigo-400" />
+          {remoteCursors.length + 1} online
+        </span>
+        <span className="flex items-center gap-1">
+          <FiLayers size={14} className="text-green-400" />
+          {elements.length} elements
+        </span>
+        <span className="flex items-center gap-1">
+          <FiMessageCircle size={14} className="text-blue-400" />
+          {chatMessages.length} messages
+        </span>
+        <span className="flex items-center gap-1">
+          <FiActivity size={14} className="text-purple-400" />
+          {activities.length} activities
+        </span>
+        <span className="flex items-center gap-1">
+          <FiEye size={14} className="text-yellow-400" />
+          {zoom}%
+        </span>
       </div>
     </div>
   );
